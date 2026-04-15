@@ -65,6 +65,16 @@ services:
       AGENT_MODEL: ${AGENT_MODEL:-claude-sonnet-4-6}
       ARBITER_MODEL: ${ARBITER_MODEL:-claude-opus-4-6}
       AGENT_RUNNER_IMPL: ${AGENT_RUNNER_IMPL:-null}
+      # Rate-limit mode: 0 = parallel agent fan-out (needs Tier 2+ / 50 RPM).
+      # Set to 13 on Tier 1 (5 RPM) to serialize with 13 s pacing.
+      AGENT_PACE_SECONDS: ${AGENT_PACE_SECONDS:-0}
+      # Empty = all 6 action tools enabled (diplomatic, economic, info, cyber,
+      # kinetic, no_action). On Tier 1 set to "information_action,cyber_action"
+      # to shrink prompts.
+      DISABLED_AGENT_TOOLS: ${DISABLED_AGENT_TOOLS:-}
+      # Max output tokens per country-agent reply. 2048 = full rationales;
+      # 512 was the Tier-1 compression fallback.
+      AGENT_MAX_TOKENS: ${AGENT_MAX_TOKENS:-2048}
       ENVIRONMENT: development
       LOG_LEVEL: DEBUG
       # Bare imports in the codebase are `from app.*`, `from ingest.*` (resolve

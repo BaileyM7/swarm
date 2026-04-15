@@ -202,8 +202,9 @@ class SimLoop:
                 # --- Parallel agent perceive → decide → propose ----------
                 proposed = await self._gather_proposals()
 
-                # Pace before the arbiter's LLM call (shares the 5 RPM bucket).
-                arbiter_pace = float(os.environ.get("AGENT_PACE_SECONDS", "13"))
+                # Pace before the arbiter's LLM call. Honor AGENT_PACE_SECONDS
+                # so Tier-1 users serialize; Tier 2+ with pace=0 skips the wait.
+                arbiter_pace = float(os.environ.get("AGENT_PACE_SECONDS", "0"))
                 if arbiter_pace > 0:
                     await asyncio.sleep(arbiter_pace)
 
@@ -334,13 +335,18 @@ class SimLoop:
                     estimated_escalation_rung=0,
                 )
 
-        # Serialize to stay under Anthropic rate limits (Tier 1: 5 RPM / 10k ITPM).
-        # AGENT_PACE_SECONDS controls the delay between successive agent calls;
-        # set to 0 once on a higher tier to restore parallel fan-out.
-        pace = float(os.environ.get("AGENT_PACE_SECONDS", "13"))
+        # Agent fan-out strategy keyed off AGENT_PACE_SECONDS:
+        #   0   → parallel via asyncio.gather (requires Tier 2+ on Anthropic:
+        #         50 RPM + 50k ITPM comfortably fits 10 agents/turn).
+        #   >0  → sequential with that many seconds between calls (Tier 1 mode,
+        #         e.g. 13 s to stay under 5 RPM).
+        pace = float(os.environ.get("AGENT_PACE_SECONDS", "0"))
+        if pace <= 0:
+            tasks = [run_one(code, agent) for code, agent in self.agents.items()]
+            return list(await asyncio.gather(*tasks))
         proposals: list[ProposedAction] = []
         for i, (code, agent) in enumerate(self.agents.items()):
-            if i > 0 and pace > 0:
+            if i > 0:
                 log.debug("agent_pace_sleep", seconds=pace)
                 await asyncio.sleep(pace)
             proposals.append(await run_one(code, agent))

@@ -125,12 +125,10 @@ export default function GlobePage() {
         {/* Sim ID watermark — bottom-left */}
         <SimIdWatermark />
 
-        {/* Global loader overlay during init */}
-        {simStatus === 'pending' && (
-          <div className="absolute inset-0 z-20 bg-background/60 backdrop-blur-sm">
-            <Loader message="Initializing simulation…" />
-          </div>
-        )}
+        {/* No full-screen loading overlay during `pending`. The globe keeps
+            spinning, the TurnCounterHud flips to "PENDING", and arcs begin
+            appearing naturally as the first events arrive — that feels more
+            alive than a blanking loader. */}
       </main>
 
       {/* ── Right drawer: AgentDrawer ── */}

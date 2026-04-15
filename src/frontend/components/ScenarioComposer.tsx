@@ -75,6 +75,7 @@ interface Preset {
   domains: Domain[];
   description: string;
   country_ids: string[];
+  max_turns: number;
   isComingSoon: boolean;
 }
 
@@ -82,30 +83,35 @@ const PRESETS: Preset[] = [
   {
     id: 'taiwan-2027',
     title: 'China–Taiwan 2027',
-    subtitle: '10 agents · 20 turns · ~60s',
+    subtitle: '7 agents · 5 turns · ~40s',
     domains: ['kinetic_limited', 'cyber', 'economic'],
     description:
-      'China initiates a quarantine blockade of Taiwan Strait. US 7th Fleet deploys to the Western Pacific. How do regional actors respond over 90 days?',
-    country_ids: ['CHN', 'TWN', 'USA', 'JPN', 'KOR', 'PHL', 'AUS', 'PRK', 'RUS', 'IND'],
+      'China announces a maritime quarantine of Taiwan\'s shipping lanes under the pretext of anti-smuggling enforcement. PLA Navy deploys Type 055 flotilla and coast-guard cutters; 7th Fleet surges to the Philippine Sea. Taiwan\'s semiconductor supply chain is at immediate risk. How do regional actors respond over 90 days?',
+    country_ids: ['CHN', 'TWN', 'USA', 'JPN', 'KOR', 'PHL', 'AUS'],
+    max_turns: 5,
     isComingSoon: false,
   },
   {
     id: 'korean-peninsula',
     title: 'Korean Peninsula Crisis',
-    subtitle: '6 agents · 15 turns · ~40s',
+    subtitle: '6 agents · 5 turns · ~35s',
     domains: ['kinetic_limited', 'info', 'diplomatic'],
-    description: 'North Korea conducts a nuclear test and threatens ICBM launch.',
-    country_ids: [],
-    isComingSoon: true,
+    description:
+      'North Korea conducts a 7th underground nuclear test (claimed yield 150 kt) and announces a "sea-based Hwasan-19" ICBM test over the Sea of Japan within 30 days. Pyongyang demands lifting of sanctions and recognition as a nuclear state. US strategic bombers deploy to Osan; Seoul elevates Jindogae-3 readiness. How do Washington, Seoul, Tokyo, Beijing, and Moscow navigate the dual-track escalation?',
+    country_ids: ['PRK', 'KOR', 'USA', 'JPN', 'CHN', 'RUS'],
+    max_turns: 5,
+    isComingSoon: false,
   },
   {
     id: 'south-china-sea',
     title: 'South China Sea Standoff',
-    subtitle: '8 agents · 20 turns · ~55s',
+    subtitle: '5 agents · 5 turns · ~30s',
     domains: ['kinetic_limited', 'diplomatic', 'economic'],
-    description: 'China establishes a new ADIZ over the Spratly Islands.',
-    country_ids: [],
-    isComingSoon: true,
+    description:
+      'China unilaterally declares an Air Defense Identification Zone (ADIZ) covering the Spratly Islands and parts of Philippine EEZ. J-20 fighters scramble to intercept a Philippine P-3C maritime patrol; a US destroyer conducts a FONOP within 12 nm of Mischief Reef. BRP Sierra Madre resupply at Second Thomas Shoal is blocked by CCG water cannons. How do the parties negotiate between escalation and strategic patience?',
+    country_ids: ['CHN', 'PHL', 'USA', 'JPN', 'AUS'],
+    max_turns: 5,
+    isComingSoon: false,
   },
 ];
 
@@ -172,7 +178,7 @@ export function ScenarioComposer() {
 
       const sim = await createSimulation({
         scenario_id: scenario.id,
-        max_turns: 20,
+        max_turns: preset?.max_turns ?? 5,
       });
       setMaxTurns(sim.max_turns);
       setCurrentSimId(sim.id);
