@@ -1,0 +1,51 @@
+/**
+ * TypeScript mirror of src/shared/schemas/sim_event.py
+ * Keep in sync with the Python Pydantic models.
+ */
+
+/** Domain classification — drives arc color on the globe. */
+export type Domain =
+  | 'info'             // violet  #a78bfa
+  | 'diplomatic'       // blue    #3b82f6  (mapped to info color in DESIGN.md)
+  | 'economic'         // amber   #f5a623
+  | 'cyber'            // cyan    #5bc9ff
+  | 'kinetic_limited'  // orange  (mapped to kinetic color)
+  | 'kinetic_general'; // red     #ff5c7a
+
+/** Escalation ladder integer 0..5. */
+export type EscalationRung = 0 | 1 | 2 | 3 | 4 | 5;
+
+export const ESCALATION_LABELS: Record<EscalationRung, string> = {
+  0: 'Peacetime',
+  1: 'Gray Zone',
+  2: 'Coercive Diplomacy',
+  3: 'Limited Conflict',
+  4: 'Regional War',
+  5: 'General War',
+};
+
+/** Reference to a data-lake event cited by an agent. */
+export interface Citation {
+  source: string; // e.g. 'gdelt', 'acled', 'worldbank'
+  ref: string;    // source-specific event reference ID
+}
+
+/**
+ * Full SimEvent as stored in Postgres and streamed over WebSocket.
+ * Mirrors SimEvent (Python) exactly.
+ */
+export interface SimEvent {
+  id: string;                        // UUID
+  sim_id: string;                    // UUID
+  parent_event_id: string | null;    // UUID | null
+  turn: number;                      // 0-indexed turn counter
+  actor_country: string;             // ISO-3
+  target_country: string | null;     // ISO-3 | null
+  domain: Domain;
+  action_type: string;               // verb-phrase slug
+  payload: Record<string, unknown>;  // domain-specific details
+  rationale: string;                 // LLM chain-of-thought
+  citations: Citation[];
+  escalation_rung: EscalationRung;
+  timestamp: string;                 // ISO-8601
+}

@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&amp;family=Inter:wght@300;400;500;600;700&amp;family=Geist+Mono:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "secondary": "#ffb955",
+            "on-primary-container": "#005371",
+            "inverse-surface": "#dfe2f3",
+            "on-background": "#dfe2f3",
+            "on-tertiary": "#381385",
+            "surface-container-low": "#171b28",
+            "secondary-container": "#dc9100",
+            "on-error": "#690005",
+            "on-secondary-fixed": "#291800",
+            "surface-dim": "#0f131f",
+            "on-tertiary-fixed-variant": "#4f319c",
+            "on-primary-fixed": "#001e2c",
+            "inverse-primary": "#00668a",
+            "background": "#0f131f",
+            "on-primary-fixed-variant": "#004c69",
+            "tertiary": "#e0d3ff",
+            "primary-container": "#5bc9ff",
+            "surface": "#0f131f",
+            "primary": "#aee0ff",
+            "on-surface-variant": "#bec8d0",
+            "surface-container-highest": "#313442",
+            "surface-variant": "#313442",
+            "secondary-fixed": "#ffddb4",
+            "surface-container-lowest": "#0a0e1a",
+            "surface-container": "#1b1f2c",
+            "on-tertiary-container": "#5437a2",
+            "outline": "#88929a",
+            "primary-fixed": "#c3e8ff",
+            "tertiary-fixed-dim": "#cebdff",
+            "surface-container-high": "#262a37",
+            "on-tertiary-fixed": "#21005e",
+            "on-secondary": "#452b00",
+            "on-secondary-container": "#4f3100",
+            "on-primary": "#003549",
+            "secondary-fixed-dim": "#ffb955",
+            "outline-variant": "#3e484f",
+            "on-surface": "#dfe2f3",
+            "on-secondary-fixed-variant": "#633f00",
+            "surface-bright": "#353946",
+            "tertiary-fixed": "#e8ddff",
+            "tertiary-container": "#c6b2ff",
+            "on-error-container": "#ffdad6",
+            "surface-tint": "#7ad0ff",
+            "inverse-on-surface": "#2c303d",
+            "error-container": "#93000a",
+            "primary-fixed-dim": "#7ad0ff",
+            "error": "#ffb4ab",
+            "kinetic": "#ff5c7a",
+            "cyber": "#5bc9ff"
+          },
+          "borderRadius": {
+            "DEFAULT": "0px",
+            "lg": "0px",
+            "xl": "0px",
+            "full": "9999px"
+          },
+          "fontFamily": {
+            "headline": ["Space Grotesk"],
+            "body": ["Inter"],
+            "label": ["Inter"],
+            "mono": ["Geist Mono"]
+          }
+        },
+      },
+    }
+  </script>
+<style>body {
+    background-color: #0a0e1a;
+    background-image: radial-gradient(circle at 50% 50%, rgba(91, 201, 255, 0.03) 0%, transparent 70%);
+    font-family: "Inter", sans-serif
+    }
+.material-symbols-outlined {
+    font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24
+    }
+.film-grain {
+    pointer-events: none;
+    position: fixed;
+    inset: 0;
+    z-index: 99;
+    opacity: 0.03;
+    background-image: url(https://lh3.googleusercontent.com/aida-public/AB6AXuDFwRS5900x8dwd3hIJUyav2qrVaN_xUnqOv6Yy3mudeQ6r3JsdQG2jld76JHuG-VVjS51-R-S629KmVJEdVPFA62P9AHvc3O96iWY-hjsES5_YyF9e1U1-oNZfCAPrufocA5jVmSVpU1keWHwzQ7_1bA0SUXpG19dHWHarIGClfPCWhMHB42UwPf9tP_s1hshxKX02hJhJ16JwccDyz95i2uRSpjcMfy9ixa59r7VGseg4Mz-Giv9rSJc5O0hEQINyQL-ZFZl3jj2I)
+    }
+.ghost-border {
+    box-shadow: inset 0 0 0 1px rgba(62, 72, 79, 0.12)
+    }
+.pulse-kinetic {
+    box-shadow: 0 0 12px rgba(255, 92, 122, 0.3)
+    }</style>
+</head>
+<body class="text-on-surface overflow-hidden">
+<div class="film-grain"></div>
+<!-- Shared Component: TopNavBar -->
+<header class="fixed top-0 w-full z-50 flex justify-between items-center px-6 h-14 bg-slate-950/60 backdrop-blur-xl border-b border-slate-800/50 font-['Space_Grotesk'] tracking-tight">
+<div class="flex items-center gap-8">
+<span class="font-mono font-bold text-sky-400 tracking-tighter text-xl">SWARM</span>
+<nav class="hidden md:flex gap-6 items-center">
+<a class="text-slate-500 hover:text-sky-300 transition-colors scale-95 active:duration-75" href="#">Simulate</a>
+<a class="text-sky-400 border-b-2 border-sky-400 pb-1 hover:text-sky-300 transition-colors scale-95 active:duration-75" href="#">Tactical</a>
+<a class="text-slate-500 hover:text-sky-300 transition-colors scale-95 active:duration-75" href="#">Intelligence</a>
+<a class="text-slate-500 hover:text-sky-300 transition-colors scale-95 active:duration-75" href="#">Logistics</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<button class="material-symbols-outlined text-slate-500 hover:text-sky-300 transition-colors" data-icon="notifications_active">notifications_active</button>
+<button class="material-symbols-outlined text-slate-500 hover:text-sky-300 transition-colors" data-icon="settings">settings</button>
+<div class="w-8 h-8 bg-surface-container-highest border border-outline-variant flex items-center justify-center overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="close-up portrait of military commander in sharp uniform with medals and serious expression in high-contrast cinematic lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDaGJtmdBjGxMK1JKOtK6lR_jnU3rVpL9O0q2QwMehWtbugcR8QOheFoUeBqtZSuFQnlrAWrBxVHCHVDrf611LPXVyQUbxXh1AaliuoL-Lol9xHr4glzdc66cEILJYYhXFupS1wSPoQvyFx4ptuy2LWx1PdJVQBCc4oe4NgIwqN_BfVTn2xIUm4dt0IqEpjjVVTk7rr7_lTJzWs1RAouU6Rce0cp7qfs_FFBMKCQ1XknN2AzdiqlGd4DPEH8AmM4CvjtUNnrZ7_Pvo1"/>
+</div>
+</div>
+</header>
+<!-- Main Canvas / Map Area -->
+<main class="relative w-full h-screen pt-14 bg-surface-container-lowest">
+<div class="absolute inset-0 z-0">
+<img class="w-full h-full object-cover opacity-40" data-alt="high-detail dark blue tactical global map with glowing grid lines and neon cyber blue data points representing maritime traffic" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDwejE9uEcSGJdOUR_b_Lf7znggM-8m196EeervkKnYUSVGPRafwxWNn1q2AOy9i9I_5SVLvKXx0ghJq_d4X6-Tggs1nvVIgkG3gmmQTiteRLlb2mMcnK0ETh-3-7kXUsTUcL1OIah0QfESEsspMS9PRWREdmF0dRAAWgEDxSU14iWBBpWTr7ZB9M8yFDDiH8FyYf9Ksvrd3i2ZAg_oqDdK3VFI8sa42022t7xKMDg2fkJMdEHFFwJysrCjexlKIVlSnsCRhVSSFe9X"/>
+<!-- UI HUD Elements -->
+<div class="absolute top-10 left-10 p-4 border-l border-sky-400 bg-slate-950/40 backdrop-blur-md">
+<p class="font-mono text-[10px] text-sky-400/60 uppercase">System Status</p>
+<p class="font-mono text-sm text-sky-400">OPERATIONAL // L4_ENCRYPT</p>
+</div>
+</div>
+<!-- Event Detail Card (Floating) -->
+<div class="absolute top-20 right-8 w-[400px] z-40 bg-surface-container-low border border-outline-variant/30 backdrop-blur-2xl shadow-2xl pulse-kinetic">
+<div class="flex items-center justify-between bg-kinetic/10 border-b border-kinetic/30 p-3">
+<div class="flex items-center gap-3">
+<span class="bg-kinetic text-on-error text-[10px] font-mono px-2 py-0.5 font-bold">KINETIC</span>
+<span class="text-on-surface font-mono text-xs font-bold tracking-widest">EVT-007</span>
+</div>
+<button class="material-symbols-outlined text-on-surface/40 hover:text-on-surface text-sm">close</button>
+</div>
+<div class="p-6 space-y-6">
+<!-- Transfer Logic -->
+<div class="flex items-center justify-between px-4">
+<div class="text-center">
+<span class="text-3xl">🇨🇳</span>
+<p class="font-mono text-xs text-slate-500 mt-2">CHN</p>
+</div>
+<div class="flex-1 flex flex-col items-center px-4">
+<div class="w-full h-px bg-gradient-to-r from-transparent via-kinetic to-transparent relative">
+<div class="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-kinetic animate-pulse"></div>
+</div>
+<p class="font-mono text-[9px] text-kinetic mt-1 uppercase tracking-tighter">Engagement</p>
+</div>
+<div class="text-center">
+<span class="text-3xl">🇹🇼</span>
+<p class="font-mono text-xs text-slate-500 mt-2">TWN</p>
+</div>
+</div>
+<div class="space-y-2">
+<h2 class="text-xl font-headline font-bold text-on-surface tracking-tight uppercase leading-tight">Naval Quarantine Declared</h2>
+<p class="text-sm text-slate-400 font-body leading-relaxed">
+            The PLA Navy has positioned two carrier strike groups at the Bashi Channel and East Taiwan Sea. Strategic intent is consistent with A2/AD containment protocols, establishing a 200nm exclusion zone for unauthorized merchant shipping vessels.
+          </p>
+</div>
+<div class="space-y-3">
+<p class="font-mono text-[10px] text-slate-500 uppercase border-b border-slate-800 pb-1">Intelligence Sources</p>
+<div class="flex flex-wrap gap-2">
+<span class="bg-surface-container-highest border border-outline-variant px-2 py-1 flex items-center gap-2">
+<span class="material-symbols-outlined text-xs text-sky-400" data-icon="database">database</span>
+<span class="font-mono text-[10px]">GDELT_API</span>
+</span>
+<span class="bg-surface-container-highest border border-outline-variant px-2 py-1 flex items-center gap-2">
+<span class="material-symbols-outlined text-xs text-secondary" data-icon="shield_with_heart">shield_with_heart</span>
+<span class="font-mono text-[10px]">ACLED</span>
+</span>
+<span class="bg-surface-container-highest border border-outline-variant px-2 py-1 flex items-center gap-2">
+<span class="material-symbols-outlined text-xs text-purple-400" data-icon="bar_chart">bar_chart</span>
+<span class="font-mono text-[10px]">UN_COMTRADE</span>
+</span>
+</div>
+</div>
+</div>
+<div class="bg-slate-950/40 p-4 border-t border-slate-800">
+<button class="w-full bg-kinetic text-on-error font-mono text-xs py-3 font-bold hover:brightness-110 transition-all uppercase tracking-widest">
+          Acknowledge Intelligence
+        </button>
+</div>
+</div>
+</main>
+<!-- Expanded Bottom Dock: EventTimeline -->
+<footer class="fixed bottom-0 left-0 w-full z-50 bg-slate-950/80 backdrop-blur-md border-t border-slate-800/60 shadow-[0_-4px_12px_rgba(91,201,255,0.1)] h-64 flex flex-col">
+<!-- Timeline Tabs -->
+<div class="flex items-center px-6 h-10 border-b border-slate-800/40">
+<div class="flex gap-1">
+<button class="px-4 h-10 font-mono text-[10px] text-slate-500 hover:text-sky-300 transition-colors uppercase border-b-2 border-transparent">ALL</button>
+<button class="px-4 h-10 font-mono text-[10px] text-sky-400 border-b-2 border-sky-400 uppercase bg-sky-400/5">CYBER</button>
+<button class="px-4 h-10 font-mono text-[10px] text-slate-500 hover:text-sky-300 transition-colors uppercase border-b-2 border-transparent">ECONOMIC</button>
+<button class="px-4 h-10 font-mono text-[10px] text-kinetic hover:text-kinetic transition-colors uppercase border-b-2 border-transparent">KINETIC</button>
+<button class="px-4 h-10 font-mono text-[10px] text-slate-500 hover:text-sky-300 transition-colors uppercase border-b-2 border-transparent">INFO</button>
+</div>
+<div class="ml-auto flex items-center gap-4">
+<span class="font-mono text-[10px] text-slate-600">FILTER: [NONE]</span>
+<span class="font-mono text-[10px] text-sky-400 animate-pulse">LIVE TELEMETRY</span>
+</div>
+</div>
+<!-- Timeline Scroll Area -->
+<div class="flex-1 overflow-x-auto overflow-y-hidden flex px-6 py-4 gap-8">
+<!-- Group T1 -->
+<div class="flex flex-col gap-3 min-w-max border-l border-slate-800/60 pl-4 first:border-0 first:pl-0">
+<span class="font-mono text-[9px] text-slate-600 mb-1">T1 (00:00 - 08:00)</span>
+<div class="flex gap-4">
+<!-- Event Pill 1 -->
+<div class="group cursor-pointer">
+<div class="flex items-center gap-2 border border-slate-800 bg-slate-900/50 p-2 group-hover:border-sky-500/50 transition-all">
+<div class="w-1 h-8 bg-sky-400"></div>
+<div class="pr-4">
+<p class="font-mono text-[10px] text-sky-400">04:12:00</p>
+<p class="text-xs font-bold text-on-surface truncate w-32">Signal Intercept</p>
+</div>
+</div>
+</div>
+<!-- Event Pill 2 -->
+<div class="group cursor-pointer">
+<div class="flex items-center gap-2 border border-slate-800 bg-slate-900/50 p-2 group-hover:border-kinetic/50 transition-all">
+<div class="w-1 h-8 bg-kinetic"></div>
+<div class="pr-4">
+<p class="font-mono text-[10px] text-kinetic">07:45:12</p>
+<p class="text-xs font-bold text-on-surface truncate w-32">Drone Deployment</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Group T2 -->
+<div class="flex flex-col gap-3 min-w-max border-l border-slate-800/60 pl-4">
+<span class="font-mono text-[9px] text-slate-600 mb-1">T2 (08:00 - 16:00)</span>
+<div class="flex gap-4">
+<!-- Event Pill 3 -->
+<div class="group cursor-pointer">
+<div class="flex items-center gap-2 border border-sky-400/50 bg-sky-950/20 p-2">
+<div class="w-1 h-8 bg-sky-400 animate-pulse"></div>
+<div class="pr-4">
+<p class="font-mono text-[10px] text-sky-400">12:30:00</p>
+<p class="text-xs font-bold text-on-surface truncate w-32">Mainframe Breach</p>
+</div>
+</div>
+</div>
+<!-- Event Pill 4 -->
+<div class="group cursor-pointer">
+<div class="flex items-center gap-2 border border-slate-800 bg-slate-900/50 p-2 group-hover:border-secondary/50 transition-all">
+<div class="w-1 h-8 bg-secondary"></div>
+<div class="pr-4">
+<p class="font-mono text-[10px] text-secondary">15:15:45</p>
+<p class="text-xs font-bold text-on-surface truncate w-32">Currency Deval</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Group T3 -->
+<div class="flex flex-col gap-3 min-w-max border-l border-slate-800/60 pl-4">
+<span class="font-mono text-[9px] text-slate-600 mb-1">T3 (16:00 - 00:00)</span>
+<div class="flex gap-4">
+<!-- Event Pill 5 (Active) -->
+<div class="group cursor-pointer">
+<div class="flex items-center gap-2 border border-kinetic bg-kinetic/10 p-2 shadow-[0_0_10px_rgba(255,92,122,0.2)]">
+<div class="w-1 h-8 bg-kinetic"></div>
+<div class="pr-4">
+<p class="font-mono text-[10px] text-kinetic">19:02:11</p>
+<p class="text-xs font-bold text-on-surface truncate w-32">EVT-007 Quarantine</p>
+</div>
+</div>
+</div>
+<!-- Event Pill 6 -->
+<div class="group cursor-pointer opacity-50 hover:opacity-100 transition-opacity">
+<div class="flex items-center gap-2 border border-slate-800 bg-slate-900/50 p-2">
+<div class="w-1 h-8 bg-slate-700"></div>
+<div class="pr-4">
+<p class="font-mono text-[10px] text-slate-500">22:00:00</p>
+<p class="text-xs font-bold text-slate-500 truncate w-32">Projected Incursion</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Bottom Action Bar -->
+<div class="h-10 px-6 border-t border-slate-800/40 flex items-center justify-between">
+<div class="flex gap-4">
+<span class="font-mono text-[10px] text-slate-500 flex items-center gap-2">
+<span class="w-1.5 h-1.5 bg-sky-400"></span> ACTIVE_NODES: 14,021
+        </span>
+<span class="font-mono text-[10px] text-slate-500 flex items-center gap-2">
+<span class="w-1.5 h-1.5 bg-kinetic"></span> THREAT_LEVEL: SEVERE
+        </span>
+</div>
+<div class="flex gap-6 h-full">
+<button class="h-full flex items-center gap-2 px-2 text-sky-400 bg-sky-950/50 font-mono text-[10px]">
+<span class="material-symbols-outlined text-[14px]" data-icon="sensors">sensors</span>
+          Live Feed
+        </button>
+<button class="h-full flex items-center gap-2 px-2 text-slate-500 hover:text-sky-400 font-mono text-[10px] transition-colors">
+<span class="material-symbols-outlined text-[14px]" data-icon="radar">radar</span>
+          Comms
+        </button>
+<button class="h-full flex items-center gap-2 px-2 text-slate-500 hover:text-sky-400 font-mono text-[10px] transition-colors">
+<span class="material-symbols-outlined text-[14px]" data-icon="hub">hub</span>
+          Signals
+        </button>
+</div>
+</div>
+</footer>
+</body></html>
