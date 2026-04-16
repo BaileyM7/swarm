@@ -16,6 +16,7 @@ function makeEvent(overrides: Partial<SimEvent> = {}): SimEvent {
     rationale: 'Test rationale',
     citations: [],
     escalation_rung: 1,
+    explainability: null,
     timestamp: new Date().toISOString(),
     ...overrides,
   };

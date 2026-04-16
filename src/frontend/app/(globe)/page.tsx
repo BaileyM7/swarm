@@ -7,16 +7,18 @@
  */
 
 import dynamic from 'next/dynamic';
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { BookOpen } from 'lucide-react';
 import { ScenarioComposer } from '@/components/ScenarioComposer';
 import { AgentDrawer } from '@/components/AgentDrawer';
 import { EventTimeline } from '@/components/EventTimeline';
 import { EventDetailCard } from '@/components/EventDetailCard';
+import { DecisionLogPanel } from '@/components/DecisionLogPanel';
 import { ViewToggle } from '@/components/ViewToggle';
 import { Loader } from '@/components/ui/Loader';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { useSimStore } from '@/lib/store/simStore';
-import type { SimEvent } from '@/lib/types/sim-event';
+import type { SimEvent, TriggeringFactor } from '@/lib/types/sim-event';
 
 // Code-split the heavy viz; never SSR (WebGL requires browser)
 const WorldView = dynamic(
@@ -34,8 +36,10 @@ export default function GlobePage() {
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [timelineExpanded, setTimelineExpanded] = useState(false);
+  const [decisionLogOpen, setDecisionLogOpen] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<SimEvent | null>(null);
   const [isMobile, setIsMobile] = useState(false);
+  const events = useSimStore((s) => s.events);
 
   // Detect mobile viewport
   useEffect(() => {
@@ -49,6 +53,22 @@ export default function GlobePage() {
   useEffect(() => {
     setDrawerOpen(!!selectedCountry);
   }, [selectedCountry]);
+
+  // Auto-open the Decision Log panel on the first event of a sim.  Without
+  // this, live runs look visually thinner than the Taiwan demo even though
+  // the data is identical — users have to find the "Decision Log" button to
+  // see the "Action / Because / In hopes of" card for each decision.  A
+  // ref guard prevents us from fighting a manual close: once the panel has
+  // been auto-opened once in this session, subsequent events won't reopen
+  // it if the user has dismissed it.
+  const hasAutoOpenedLog = useRef(false);
+  const hasEvents = events.length > 0;
+  useEffect(() => {
+    if (hasEvents && !hasAutoOpenedLog.current) {
+      setDecisionLogOpen(true);
+      hasAutoOpenedLog.current = true;
+    }
+  }, [hasEvents]);
 
   const handleCountryClick = useCallback(
     (iso3: string) => {
@@ -70,6 +90,21 @@ export default function GlobePage() {
   const handleEventDetailClose = useCallback(() => {
     setSelectedEvent(null);
   }, []);
+
+  /**
+   * Factor click-through. When the user clicks a `kind=event` triggering
+   * factor (in either the decision log or an open EventDetailCard), look up
+   * the source event by UUID and open its detail card. Other factor kinds
+   * are no-ops for now (no canonical "source object" to navigate to).
+   */
+  const handleFactorClick = useCallback(
+    (factor: TriggeringFactor) => {
+      if (factor.kind !== 'event' || !factor.verified) return;
+      const source = events.find((e) => e.id === factor.ref);
+      if (source) setSelectedEvent(source);
+    },
+    [events],
+  );
 
   // Mobile interstitial — app is desktop-first
   if (isMobile) {
@@ -95,6 +130,8 @@ export default function GlobePage() {
   const timelineHeight = timelineExpanded ? 256 : 64;
   // Right drawer width when open
   const drawerWidth = drawerOpen ? 360 : 0;
+  // Left decision-log panel width when open (sits between sidebar and globe)
+  const decisionLogWidth = decisionLogOpen ? 380 : 0;
 
   return (
     <div className="fixed inset-0 bg-background flex overflow-hidden">
@@ -103,10 +140,18 @@ export default function GlobePage() {
         <ScenarioComposer />
       </aside>
 
+      {/* ── Decision log panel (slides in from the left edge of the globe) ── */}
+      <DecisionLogPanel
+        isOpen={decisionLogOpen}
+        onClose={() => setDecisionLogOpen(false)}
+        width={decisionLogWidth}
+        onFactorClick={handleFactorClick}
+      />
+
       {/* ── Center: Globe + metadata overlays ── */}
       <main
         className="flex-1 relative overflow-hidden transition-all duration-200"
-        style={{ marginBottom: timelineHeight }}
+        style={{ marginBottom: timelineHeight, marginLeft: decisionLogWidth }}
         data-testid="globe-canvas"
       >
         <ErrorBoundary>
@@ -136,6 +181,7 @@ export default function GlobePage() {
         isOpen={drawerOpen}
         onClose={handleDrawerClose}
         onEventClick={handleEventClick}
+        onFactorClick={handleFactorClick}
         drawerWidth={drawerWidth}
       />
 
@@ -147,9 +193,32 @@ export default function GlobePage() {
         height={timelineHeight}
       />
 
+      {/* ── Decision log toggle (top-left HUD, next to scenario sidebar) ── */}
+      <button
+        type="button"
+        onClick={() => setDecisionLogOpen((v) => !v)}
+        className={[
+          'absolute top-4 z-40 flex items-center gap-2 px-3 py-2 font-mono text-[10px] font-bold tracking-widest uppercase border transition-all',
+          decisionLogOpen
+            ? 'bg-cyber/15 border-cyber/60 text-cyber'
+            : 'bg-background/80 backdrop-blur-lg border-outline-variant/40 text-on-surface-variant hover:text-on-surface hover:border-cyber/40',
+        ].join(' ')}
+        style={{ left: 320 + decisionLogWidth + 16 }}
+        aria-pressed={decisionLogOpen}
+        aria-label="Toggle decision log"
+        data-testid="decision-log-toggle"
+      >
+        <BookOpen size={12} />
+        Decision Log
+      </button>
+
       {/* ── Event detail card (floating modal) ── */}
       {selectedEvent && (
-        <EventDetailCard event={selectedEvent} onClose={handleEventDetailClose} />
+        <EventDetailCard
+          event={selectedEvent}
+          onClose={handleEventDetailClose}
+          onFactorClick={handleFactorClick}
+        />
       )}
     </div>
   );

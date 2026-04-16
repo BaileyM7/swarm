@@ -14,9 +14,14 @@ import { PlaybackControls } from './PlaybackControls';
 import { TurnScrubber } from './TurnScrubber';
 import { useSimStore } from '@/lib/store/simStore';
 import { useSimStream } from '@/hooks/useSimStream';
-import { createScenario, createSimulation } from '@/lib/api/client';
+import {
+  createScenario,
+  createSimulation,
+  extractScenarioEvents,
+} from '@/lib/api/client';
 import { runTaiwanDemo } from '@/lib/demo/taiwanDemo';
 import type { Domain } from '@/lib/types/sim-event';
+import type { SeedEvent } from '@/lib/types/scenario';
 
 const MAX_CHARS = 2000;
 
@@ -77,6 +82,20 @@ interface Preset {
   country_ids: string[];
   max_turns: number;
   isComingSoon: boolean;
+  /**
+   * Structured events applied at turn 0 before any agent runs.  Authored to
+   * match the `description` prose exactly — if the prose mentions a
+   * quarantine, there MUST be a corresponding quarantine seed event, and
+   * vice versa.  This is what makes "click preset → agents react" work:
+   * without seed events the world starts flat and no_action dominates.
+   */
+  seed_events: SeedEvent[];
+  /**
+   * Optional baseline posture per country at turn 0.  Complements seed
+   * events: a country can be "aggressive" without any specific action
+   * having happened, which shapes how agents read the world.
+   */
+  posture_overrides?: Record<string, string>;
 }
 
 const PRESETS: Preset[] = [
@@ -90,6 +109,73 @@ const PRESETS: Preset[] = [
     country_ids: ['CHN', 'TWN', 'USA', 'JPN', 'KOR', 'PHL', 'AUS'],
     max_turns: 5,
     isComingSoon: false,
+    posture_overrides: {
+      CHN: 'aggressive',
+      TWN: 'defensive',
+      USA: 'deterrent',
+      JPN: 'defensive',
+      PHL: 'defensive',
+    },
+    seed_events: [
+      {
+        actor_country: 'CHN',
+        target_country: 'TWN',
+        domain: 'kinetic_limited',
+        action_type: 'maritime_quarantine_declaration',
+        escalation_rung: 3,
+        rationale:
+          "PRC announces a quarantine of Taiwan's shipping lanes under the pretext of anti-smuggling enforcement. Inciting event for the scenario.",
+        payload: {
+          area: 'Taiwan Strait + 200nm Taiwan EEZ',
+          stated_justification: 'anti-smuggling customs enforcement',
+          assets_deployed: [
+            'Type 055 destroyer flotilla',
+            'Type 052D destroyers',
+            'Coast Guard cutters',
+          ],
+        },
+      },
+      {
+        actor_country: 'USA',
+        target_country: 'CHN',
+        domain: 'diplomatic',
+        action_type: 'condemnation_statement',
+        escalation_rung: 1,
+        rationale: 'Initial US verbal response — rhetorical, not kinetic.',
+        payload: {
+          message:
+            'The United States condemns PRC coercion and reaffirms its commitment to a free and open Indo-Pacific.',
+        },
+      },
+      {
+        actor_country: 'USA',
+        target_country: 'TWN',
+        domain: 'kinetic_limited',
+        action_type: 'carrier_group_surge',
+        escalation_rung: 2,
+        rationale:
+          '7th Fleet repositioned to the Philippine Sea in response to the PLA quarantine.',
+        payload: {
+          asset: 'USS Ronald Reagan CSG',
+          area: 'Philippine Sea',
+          posture: 'deterrent',
+        },
+      },
+      {
+        actor_country: 'CHN',
+        target_country: 'TWN',
+        domain: 'cyber',
+        action_type: 'infrastructure_probe',
+        escalation_rung: 2,
+        rationale:
+          'PLASSF probes TWN power grid SCADA and TSMC OT networks — gray-zone reconnaissance consistent with quarantine preparation and supply-chain coercion.',
+        payload: {
+          target_systems: ['TWN national grid SCADA', 'TSMC fab OT network'],
+          method: 'spearphishing + credential harvesting',
+          attribution: 'PLASSF Network Systems Dept (inferred)',
+        },
+      },
+    ],
   },
   {
     id: 'korean-peninsula',
@@ -101,6 +187,79 @@ const PRESETS: Preset[] = [
     country_ids: ['PRK', 'KOR', 'USA', 'JPN', 'CHN', 'RUS'],
     max_turns: 5,
     isComingSoon: false,
+    posture_overrides: {
+      PRK: 'aggressive',
+      KOR: 'defensive',
+      USA: 'deterrent',
+      JPN: 'defensive',
+    },
+    seed_events: [
+      {
+        actor_country: 'PRK',
+        target_country: null,
+        domain: 'kinetic_limited',
+        action_type: 'nuclear_test',
+        escalation_rung: 4,
+        rationale:
+          "DPRK conducts its 7th underground nuclear test. Inciting event; sets the crisis clock.",
+        payload: {
+          test_number: 7,
+          claimed_yield_kt: 150,
+          site: 'Punggye-ri',
+        },
+      },
+      {
+        actor_country: 'PRK',
+        target_country: 'JPN',
+        domain: 'info',
+        action_type: 'missile_test_announcement',
+        escalation_rung: 2,
+        rationale:
+          "Pyongyang publicly commits to a sea-based Hwasan-19 ICBM test over the Sea of Japan within 30 days.",
+        payload: {
+          system: 'Hwasan-19',
+          trajectory: 'Sea of Japan',
+          window_days: 30,
+        },
+      },
+      {
+        actor_country: 'USA',
+        target_country: 'KOR',
+        domain: 'kinetic_limited',
+        action_type: 'bomber_deployment',
+        escalation_rung: 2,
+        rationale:
+          'B-1B/B-52 strategic bombers deploy to Osan Air Base in visible response.',
+        payload: {
+          airframe: 'B-1B Lancer',
+          destination: 'Osan AB, ROK',
+        },
+      },
+      {
+        actor_country: 'KOR',
+        target_country: null,
+        domain: 'kinetic_limited',
+        action_type: 'readiness_elevation',
+        escalation_rung: 2,
+        rationale: 'Seoul elevates Jindogae-3 (highest peacetime readiness).',
+        payload: { level: 'Jindogae-3' },
+      },
+      {
+        actor_country: 'PRK',
+        target_country: 'KOR',
+        domain: 'cyber',
+        action_type: 'banking_intrusion_attempt',
+        escalation_rung: 2,
+        rationale:
+          'Lazarus-group-attributed intrusion attempts against ROK financial institutions — DPRK foreign-currency generation under sanctions pressure, timed to crisis.',
+        payload: {
+          targets: ['Woori Bank', 'KEB Hana', 'Shinhan Bank'],
+          group: 'Lazarus Group (APT38)',
+          objective: 'USD extraction to fund missile program',
+          indicators_of_compromise: ['C2 infra overlap with 2023 intrusion set'],
+        },
+      },
+    ],
   },
   {
     id: 'south-china-sea',
@@ -112,6 +271,82 @@ const PRESETS: Preset[] = [
     country_ids: ['CHN', 'PHL', 'USA', 'JPN', 'AUS'],
     max_turns: 5,
     isComingSoon: false,
+    posture_overrides: {
+      CHN: 'aggressive',
+      PHL: 'defensive',
+      USA: 'deterrent',
+    },
+    seed_events: [
+      {
+        actor_country: 'CHN',
+        target_country: 'PHL',
+        domain: 'info',
+        action_type: 'adiz_declaration',
+        escalation_rung: 3,
+        rationale:
+          'PRC unilaterally declares a South China Sea ADIZ covering the Spratly Islands and parts of the Philippine EEZ. Inciting event.',
+        payload: {
+          area: 'Spratly Islands + PHL EEZ',
+          type: 'Air Defense Identification Zone',
+        },
+      },
+      {
+        actor_country: 'CHN',
+        target_country: 'PHL',
+        domain: 'kinetic_limited',
+        action_type: 'fighter_intercept',
+        escalation_rung: 2,
+        rationale:
+          'PLAAF J-20s scramble to intercept a Philippine P-3C maritime patrol inside the newly declared ADIZ.',
+        payload: {
+          interceptor: 'J-20',
+          intercepted: 'P-3C Orion',
+          location: 'Spratly Islands',
+        },
+      },
+      {
+        actor_country: 'USA',
+        target_country: 'CHN',
+        domain: 'kinetic_limited',
+        action_type: 'fonop',
+        escalation_rung: 2,
+        rationale:
+          'US destroyer conducts a freedom-of-navigation operation within 12nm of Mischief Reef.',
+        payload: {
+          asset: 'Arleigh Burke DDG',
+          feature: 'Mischief Reef',
+          range_nm: 12,
+        },
+      },
+      {
+        actor_country: 'CHN',
+        target_country: 'PHL',
+        domain: 'kinetic_limited',
+        action_type: 'ccg_water_cannon',
+        escalation_rung: 2,
+        rationale:
+          'China Coast Guard blocks Philippine resupply of BRP Sierra Madre at Second Thomas Shoal using water cannons.',
+        payload: {
+          target_vessel: 'BRP Sierra Madre resupply',
+          feature: 'Second Thomas Shoal',
+          method: 'water cannon',
+        },
+      },
+      {
+        actor_country: 'CHN',
+        target_country: 'PHL',
+        domain: 'cyber',
+        action_type: 'edca_reconnaissance',
+        escalation_rung: 2,
+        rationale:
+          'PLA cyber teams probe Philippine C4I networks supporting EDCA sites — intelligence preparation for possible kinetic escalation in the ADIZ.',
+        payload: {
+          targets: ['AFP C4I network', 'EDCA site logistics'],
+          method: 'supply-chain compromise + watering-hole',
+          attribution: 'PLA Strategic Support Force (inferred)',
+        },
+      },
+    ],
   },
 ];
 
@@ -131,6 +366,14 @@ export function ScenarioComposer() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showConfirm, setShowConfirm] = useState(false);
+  // Extracted seed events for custom (non-preset) scenarios.  Populated by
+  // the Extract button → /api/scenarios/extract-events.  While the backend
+  // is stubbed (is_stub=true), we surface a disclaimer so the user knows
+  // no real events land — but the UI path is fully wired for the day the
+  // Haiku-backed extractor ships.
+  const [extractedEvents, setExtractedEvents] = useState<SeedEvent[] | null>(null);
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [extractIsStub, setExtractIsStub] = useState(false);
 
   const simStatus = useSimStore((s) => s.simStatus);
   const currentTurn = useSimStore((s) => s.currentTurn);
@@ -152,7 +395,29 @@ export function ScenarioComposer() {
     setSelectedPreset(preset.id);
     setText(preset.description);
     setError(null);
+    // Clear any extracted events — a preset brings its own authored events.
+    setExtractedEvents(null);
+    setExtractIsStub(false);
   }, []);
+
+  const handleExtractEvents = useCallback(async () => {
+    if (!text.trim()) {
+      setError('Type a scenario description first.');
+      return;
+    }
+    setIsExtracting(true);
+    setError(null);
+    try {
+      const result = await extractScenarioEvents({ description: text.trim() });
+      setExtractedEvents(result.seed_events);
+      setExtractIsStub(result.is_stub);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to extract events.';
+      setError(msg);
+    } finally {
+      setIsExtracting(false);
+    }
+  }, [text]);
 
   const doSimulate = useCallback(async () => {
     if (!text.trim()) {
@@ -167,12 +432,27 @@ export function ScenarioComposer() {
 
     try {
       const preset = PRESETS.find((p) => p.id === selectedPreset);
+      // Seed events flow from one of two sources:
+      //   1. A preset — hand-authored events that match the preset's prose.
+      //   2. Extracted events — Option B path: user typed a custom prose,
+      //      hit Extract, and got back a list from /api/scenarios/extract-events.
+      // If neither is present, the sim starts from a flat world and the
+      // agents have only the prose description in their prompts.
+      const initial_conditions = preset
+        ? {
+            seed_events: preset.seed_events,
+            posture_overrides: preset.posture_overrides ?? {},
+          }
+        : extractedEvents && extractedEvents.length > 0
+          ? { seed_events: extractedEvents, posture_overrides: {} }
+          : undefined;
       const scenario = await createScenario({
         title: preset?.title ?? 'Custom Scenario',
         description: text.trim(),
         country_ids: preset?.country_ids?.length
           ? preset.country_ids
           : ['CHN', 'TWN', 'USA', 'JPN', 'KOR', 'PHL', 'AUS', 'PRK', 'RUS', 'IND'],
+        initial_conditions,
       });
       setCurrentScenario(scenario);
 
@@ -196,7 +476,13 @@ export function ScenarioComposer() {
   ]);
 
   const handleSimulateClick = useCallback(() => {
-    if (simStatus !== 'idle' && simStatus !== 'completed' && simStatus !== 'aborted') {
+    // Confirm only when a simulation is currently in flight; null (no sim yet),
+    // 'completed', 'aborted', or 'error' all mean we can launch immediately.
+    const inFlight =
+      simStatus === 'running' ||
+      simStatus === 'paused' ||
+      simStatus === 'pending';
+    if (inFlight) {
       setShowConfirm(true);
     } else {
       doSimulate();
@@ -222,7 +508,10 @@ export function ScenarioComposer() {
         {/* Status row */}
         <div className="flex items-center gap-2">
           <span
-            className={['w-2 h-2 shrink-0', STATUS_DOT[simStatus] ?? 'bg-outline'].join(' ')}
+            className={[
+              'w-2 h-2 shrink-0',
+              (simStatus && STATUS_DOT[simStatus]) || 'bg-outline',
+            ].join(' ')}
           />
           <span className="font-mono text-[10px] text-on-surface-variant uppercase tracking-widest">
             {simStatus}
@@ -266,6 +555,51 @@ export function ScenarioComposer() {
           {error && (
             <p className="font-mono text-[10px] text-kinetic">{error}</p>
           )}
+
+          {/* Extract-events (Option B) — only meaningful for custom text.
+              Hidden when a preset is selected because presets ship their own
+              authored seed events.  The backend is currently a stub; we show
+              that transparently rather than implying the feature works. */}
+          {!selectedPreset && text.trim().length > 0 && (
+            <div className="space-y-1">
+              <button
+                type="button"
+                onClick={handleExtractEvents}
+                disabled={isExtracting || isSubmitting}
+                className={[
+                  'w-full font-mono text-[10px] tracking-widest uppercase',
+                  'px-2 py-1.5 border border-dashed border-cyber/40',
+                  'text-cyber/80 hover:bg-cyber/5 transition-colors',
+                  'disabled:opacity-40 disabled:cursor-not-allowed',
+                ].join(' ')}
+              >
+                {isExtracting ? 'Extracting…' : '↻ Extract starting events from prose'}
+              </button>
+              {extractedEvents !== null && (
+                <p className="font-mono text-[10px] text-on-surface-variant">
+                  {extractIsStub ? (
+                    <>
+                      ⓘ Extractor stubbed — returned{' '}
+                      <span className="text-on-surface">
+                        {extractedEvents.length} events
+                      </span>
+                      . The real LLM-backed extractor is not wired yet;
+                      the sim will still start with a flat world.
+                    </>
+                  ) : (
+                    <>
+                      ✓ Extracted{' '}
+                      <span className="text-cyber">
+                        {extractedEvents.length}
+                      </span>{' '}
+                      event{extractedEvents.length === 1 ? '' : 's'} — will be
+                      seeded at T0.
+                    </>
+                  )}
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Preset cards */}
@@ -299,13 +633,15 @@ export function ScenarioComposer() {
 
       {/* Footer */}
       <div className="px-6 py-4 space-y-3 border-t border-outline-variant/30">
-        {/* Playback controls */}
-        <PlaybackControls
-          simStatus={simStatus}
-          onPause={() => control('pause')}
-          onResume={() => control('resume')}
-          onAbort={() => control('abort')}
-        />
+        {/* Playback controls — only render once a sim has been started */}
+        {simStatus !== null && (
+          <PlaybackControls
+            simStatus={simStatus}
+            onPause={() => control('pause')}
+            onResume={() => control('resume')}
+            onAbort={() => control('abort')}
+          />
+        )}
 
         {/* Simulate button */}
         <Button

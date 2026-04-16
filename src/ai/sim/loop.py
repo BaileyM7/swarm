@@ -31,7 +31,15 @@ from typing import Any, TypedDict
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from shared.schemas.sim_event import Citation, Domain, EscalationRung, SimEvent
+from shared.schemas.sim_event import (
+    Citation,
+    Domain,
+    EscalationRung,
+    Explainability,
+    FactorKind,
+    SimEvent,
+    TriggeringFactor,
+)
 
 from ai.agents.arbiter import Arbiter
 from ai.agents.country_agent import CountryAgent, MemoryRecord, Perception
@@ -130,12 +138,20 @@ class SimLoop:
         world: WorldState,
         memory_store: Any | None = None,
         max_turns: int = 20,
+        signal_collector: Any | None = None,
     ) -> None:
         self.agents = agents
         self.arbiter = arbiter
         self.world = world
         self.memory_store = memory_store
         self.max_turns = max_turns
+        # Optional SignalCollector — when provided AND a DB session is in
+        # scope during run(), each agent's perception is enriched with a
+        # short "## Recent intelligence" block compiled from the data lake.
+        # Keeping this optional means tests and stub-only runs continue to
+        # work without a Postgres connection.
+        self.signal_collector = signal_collector
+        self._db_session: AsyncSession | None = None
 
         self._paused = asyncio.Event()
         self._aborted = asyncio.Event()
@@ -179,6 +195,11 @@ class SimLoop:
                 self._listen_control(simulation_id, redis),
                 name=f"sim-control-{simulation_id}",
             )
+
+        # Stash the session for the duration of the run so per-turn helpers
+        # (e.g. _gather_proposals → SignalCollector) can issue queries
+        # without rethreading the parameter through every method.
+        self._db_session = db
 
         try:
             # Apply initial perturbation, if any, as turn 0 seed events
@@ -311,6 +332,18 @@ class SimLoop:
         async def run_one(code: str, agent: CountryAgent) -> ProposedAction:
             country_state = self.world.countries[code]
             memories = await self._recall_memories(code, country_state)
+            recent_signals: list[Any] = []
+            if self.signal_collector is not None and self._db_session is not None:
+                try:
+                    recent_signals = await self.signal_collector.collect_for(
+                        self._db_session, code
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    log.warning(
+                        "signal_collector_failed",
+                        actor=code,
+                        error=str(exc),
+                    )
             perception = Perception(
                 country_iso3=code,
                 country_name=country_state.name,
@@ -320,6 +353,11 @@ class SimLoop:
                 resource_budget=country_state.resource_budget.model_dump(),
                 world_view=self.world.summarize_for(code),
                 memories=memories,
+                persona=country_state.persona,
+                leader_profile=country_state.leader_profile,
+                recent_signals=recent_signals,
+                consecutive_no_action_turns=country_state.consecutive_no_action_turns,
+                recent_domains=list(country_state.recent_domains),
             )
             try:
                 return await agent.act(perception, memories)
@@ -421,6 +459,44 @@ class SimLoop:
 
     _current_sim_id: uuid.UUID | None = None
 
+    def _verify_explainability(
+        self,
+        actor: str,
+        explainability: Explainability | None,
+    ) -> Explainability | None:
+        """Soft-validate `kind=event` factor refs against the actor's perception.
+
+        Factors whose `ref` cannot be matched to a known SimEvent in the actor's
+        recent perception window are kept but flagged with ``verified=False`` so
+        the UI can render them muted. We never reject the action — explainability
+        is informative, not gating.
+        """
+        if explainability is None:
+            return None
+
+        # Build the set of event IDs the actor could have legitimately cited:
+        # everything in recent_events where they were actor or target.
+        visible_ids: set[str] = {
+            str(e.id)
+            for e in self.world.recent_events
+            if e.actor_country == actor or e.target_country == actor
+        }
+
+        verified_factors: list[TriggeringFactor] = []
+        for factor in explainability.triggering_factors:
+            if factor.kind is FactorKind.event and factor.ref not in visible_ids:
+                log.info(
+                    "explainability_factor_unverified",
+                    actor=actor,
+                    kind=factor.kind.value,
+                    ref=factor.ref,
+                )
+                verified_factors.append(factor.model_copy(update={"verified": False}))
+            else:
+                verified_factors.append(factor)
+
+        return explainability.model_copy(update={"triggering_factors": verified_factors})
+
     def _build_sim_event(
         self,
         sim_id: uuid.UUID,
@@ -441,6 +517,8 @@ class SimLoop:
                 except Exception:  # noqa: BLE001
                     pass
 
+        explainability = self._verify_explainability(p.actor, p.explainability)
+
         return SimEvent(
             sim_id=sim_id,
             parent_event_id=None,
@@ -453,6 +531,7 @@ class SimLoop:
             rationale=p.rationale,
             citations=citations,
             escalation_rung=int(EscalationRung(rung)),
+            explainability=explainability,
         )
 
     async def _persist_sim_event(
@@ -482,6 +561,11 @@ class SimLoop:
                 rationale=event.rationale,
                 citations=[c.model_dump() for c in event.citations],
                 escalation_rung=event.escalation_rung,
+                explainability=(
+                    event.explainability.model_dump(mode="json")
+                    if event.explainability is not None
+                    else None
+                ),
                 timestamp=event.timestamp,
             )
             db.add(row)
@@ -653,17 +737,30 @@ class SimLoop:
                 seed_payload = dict(seed_dict.get("payload", {}))
                 # Mark the payload so the UI can badge seed events distinctly
                 seed_payload["_origin"] = "scenario_seed"
+                action_type = str(seed_dict.get("action_type", "scenario_seed"))
+                rationale = str(seed_dict.get("rationale", "Scenario seed event."))
                 event = SimEvent(
                     sim_id=sim_id,
                     turn=0,
                     actor_country=actor,
                     target_country=target.upper() if target else None,
                     domain=domain,
-                    action_type=str(seed_dict.get("action_type", "scenario_seed")),
+                    action_type=action_type,
                     payload=seed_payload,
-                    rationale=str(seed_dict.get("rationale", "Scenario seed event.")),
+                    rationale=rationale,
                     citations=[],
                     escalation_rung=int(seed_dict.get("escalation_rung", 2)),
+                    # Auto-synthesize an Explainability triplet for the seed so
+                    # clicking the T0 arc opens the same "Action / Because /
+                    # In hopes of" card that live events get.  Without this
+                    # the UI falls back to a muted "Legacy rationale" box and
+                    # the seed arcs look visually worse than agent-generated
+                    # arcs — the exact visual gap between demo and live that
+                    # users hit.
+                    explainability=_synthesize_seed_explainability(
+                        action_type=action_type,
+                        rationale=rationale,
+                    ),
                 )
             except Exception as exc:  # noqa: BLE001
                 log.warning("bad_seed_event", error=str(exc))
@@ -699,6 +796,45 @@ class SimLoop:
 # ---------------------------------------------------------------------------
 # Helpers / posture bucketing                                                #
 # ---------------------------------------------------------------------------
+
+
+def _synthesize_seed_explainability(
+    *, action_type: str, rationale: str
+) -> Explainability:
+    """Build an ``Explainability`` for a scenario seed event.
+
+    Seed events don't have an agent behind them — they're pre-authored by
+    the scenario — so we can't extract a genuine triggering-factor chain.
+    Instead we produce an honest minimal triplet that labels itself as
+    scenario-provided, so the UI renders the full three-slot card (matching
+    demo behavior) without pretending the seed was agent reasoning.
+    """
+    action_human = action_type.replace("_", " ")
+    # Clamp to Explainability field limits: summary ≤160, intended_outcome ≤240.
+    summary = f"Scenario-seeded {action_human} (inciting event)."[:160]
+    intended_outcome = (
+        rationale[:240]
+        if rationale and rationale != "Scenario seed event."
+        else (
+            "Establish the opening-move state of the simulation so downstream "
+            "agent responses have a concrete inciting event to react to."
+        )
+    )
+    return Explainability(
+        summary=summary,
+        triggering_factors=[
+            TriggeringFactor(
+                kind=FactorKind.perception,
+                ref="scenario.seed",
+                note=(
+                    "Pre-authored inciting event from the scenario preset — "
+                    "not the product of agent reasoning."
+                ),
+                verified=True,
+            )
+        ],
+        intended_outcome=intended_outcome,
+    )
 
 
 def _bucket_posture(rel: Relationship) -> str:
@@ -743,6 +879,8 @@ def seed_world_from_countries(
             name=str(c.get("name", code)),
             red_lines=red_lines,
             doctrine=str(c.get("doctrine", "") or ""),
+            persona=str(c.get("persona", "") or ""),
+            leader_profile=c.get("leader_profile"),
         )
     # Pre-populate relationships at neutral baseline
     codes = list(state.countries.keys())

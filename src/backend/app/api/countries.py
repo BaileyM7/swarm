@@ -55,6 +55,7 @@ class CountryResponse(BaseModel):
     doctrine: dict[str, Any] = Field(default_factory=dict)
     red_lines: list[Any] = Field(default_factory=list)
     military_assets: dict[str, Any] = Field(default_factory=dict)
+    persona: str | None = None
     updated_at: str
 
 
@@ -116,10 +117,25 @@ async def _maybe_seed_countries(db: AsyncSession) -> None:
             list(red_lines_raw) if isinstance(red_lines_raw, list) else []
         )
 
+        # Resolve persona_file (relative to the seeds dir) into inline markdown.
+        persona_value: str | None = None
+        persona_ref = record.get("persona_file")
+        if isinstance(persona_ref, str) and persona_ref.strip():
+            persona_path = (_SEEDS_PATH.parent / persona_ref).resolve()
+            try:
+                persona_value = persona_path.read_text(encoding="utf-8")
+            except OSError as exc:
+                log.warning(
+                    "persona_file_missing",
+                    iso3=record.get("iso3"),
+                    path=str(persona_path),
+                    error=str(exc),
+                )
+
         # Fold remaining strategic metadata (lat/lon/government_type/alliances
         # /adversaries/military_spend_usd) into profile so nothing is lost.
         _core_keys = {"iso3", "name", "doctrine", "red_lines", "gdp_usd",
-                      "profile", "military_assets"}
+                      "profile", "military_assets", "persona_file"}
         profile_extras = {k: v for k, v in record.items() if k not in _core_keys}
         profile_value = {**record.get("profile", {}), **profile_extras}
 
@@ -130,6 +146,7 @@ async def _maybe_seed_countries(db: AsyncSession) -> None:
             doctrine=doctrine_value,
             red_lines=red_lines_value,
             military_assets=record.get("military_assets", {}),
+            persona=persona_value,
             gdp_usd=record.get("gdp_usd"),
         )
         db.add(country)
@@ -149,6 +166,7 @@ def _country_to_response(c: Country) -> CountryResponse:
         doctrine=c.doctrine,
         red_lines=c.red_lines,
         military_assets=c.military_assets,
+        persona=c.persona,
         updated_at=c.updated_at.isoformat(),
     )
 

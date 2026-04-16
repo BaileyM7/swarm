@@ -14,7 +14,14 @@ import { getCentroid } from '@/lib/geo';
 import { SLICE_COUNTRIES } from '@/lib/types/country';
 import type { SimEvent } from '@/lib/types/sim-event';
 
-const ARC_FADE_WINDOW_MS = 30_000; // arcs fade over 30 seconds
+// Arc age fade — turn-relative, not wall-clock.  Wall-clock fading means a
+// 3-minute sim run (pacing=2s × 7 agents × 3 turns) has T1 arcs already
+// half-faded by the time T3 renders, and replaying a completed sim shows
+// every arc faded because the timestamps are old.  Using turn distance
+// instead means the "newest" turn always pops and older turns recede by
+// a constant amount per turn — behavior matches what the user expects.
+const ARC_FADE_TURNS = 4; // arcs from turn N-4 fade to minimum alpha
+const ARC_MIN_ALPHA_RATIO = 0.35; // floor so old arcs stay visible, just dimmer
 
 export interface ScatterPoint {
   iso3: string;
@@ -68,7 +75,7 @@ export function useGlobeData() {
 
   const scatterData: ScatterPoint[] = useMemo(
     () =>
-      SLICE_COUNTRIES.map((iso3) => {
+      SLICE_COUNTRIES.map((iso3): ScatterPoint | null => {
         const centroid = getCentroid(iso3);
         if (!centroid) return null;
         return {
@@ -84,11 +91,13 @@ export function useGlobeData() {
   const arcData: ArcDatum[] = useMemo(() => {
     // Only show the last 40 events to keep WebGL buffer reasonable
     const recent = visibleEvents.slice(-40);
-    // Capture now once per memo recompute (stable within this memo execution).
-    // Age-fade uses the wall-clock time at the moment events are added to the
-    // store — subsequent frame redraws do NOT recompute this memo.
-    // Fine-grained per-frame fade is handled in the shader via u_time.
-    const memoNow = Date.now();
+    // Age-fade anchor: the highest turn number present in the visible set.
+    // Live-stream case → equals the current turn.  Replay case → equals
+    // the scrubber's turn.  Either way the newest shown arcs are at full
+    // alpha and older ones recede by constant per-turn steps.
+    let newestTurn = 0;
+    for (const ev of recent) if (ev.turn > newestTurn) newestTurn = ev.turn;
+
     const result: ArcDatum[] = [];
     for (const ev of recent) {
       if (!ev.target_country) continue;
@@ -96,9 +105,12 @@ export function useGlobeData() {
       const tgt = getCentroid(ev.target_country);
       if (!src || !tgt) continue;
 
-      const ageMs = memoNow - new Date(ev.timestamp).getTime();
-      const ageFraction = Math.max(0, Math.min(1, ageMs / ARC_FADE_WINDOW_MS));
-      const alpha = Math.round(220 * (1 - ageFraction * 0.7));
+      // Turn distance → fade fraction.  Clamped to [0, 1] so an arc from
+      // a turn very far in the past sits at the minimum alpha, not zero.
+      const turnsOld = Math.max(0, newestTurn - ev.turn);
+      const ageFraction = Math.min(1, turnsOld / ARC_FADE_TURNS);
+      const alphaFactor = 1 - ageFraction * (1 - ARC_MIN_ALPHA_RATIO);
+      const alpha = Math.round(220 * alphaFactor);
 
       const [r, g, b] = getDomainRgba(ev.domain);
       result.push({
@@ -115,7 +127,7 @@ export function useGlobeData() {
 
   const haloData: HaloDatum[] = useMemo(
     () =>
-      SLICE_COUNTRIES.map((iso3) => {
+      SLICE_COUNTRIES.map((iso3): HaloDatum | null => {
         const centroid = getCentroid(iso3);
         if (!centroid) return null;
         return {

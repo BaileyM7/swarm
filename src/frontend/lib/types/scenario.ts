@@ -4,9 +4,31 @@
 
 export type ScenarioStatus = 'draft' | 'ready' | 'archived';
 
+/**
+ * One structured event applied to the world at turn 0 before any agents
+ * run.  Mirrors src/shared/schemas/scenario.py::SeedEvent.  Keeping the
+ * shape strict on the frontend so preset authors get type-checking on
+ * every seeded event (misspelled domain / missing actor fails at compile).
+ */
+export interface SeedEvent {
+  actor_country: string;
+  target_country: string | null;
+  domain:
+    | 'info'
+    | 'diplomatic'
+    | 'economic'
+    | 'cyber'
+    | 'kinetic_limited'
+    | 'kinetic_general';
+  action_type: string;
+  rationale: string;
+  payload: Record<string, unknown>;
+  escalation_rung: 0 | 1 | 2 | 3 | 4 | 5;
+}
+
 export interface InitialConditions {
   posture_overrides: Record<string, string>;
-  seed_events: Record<string, unknown>[];
+  seed_events: SeedEvent[];
 }
 
 /** POST /api/scenarios request body. */

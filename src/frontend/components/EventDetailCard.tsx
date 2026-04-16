@@ -10,19 +10,26 @@ import { useEffect, useCallback } from 'react';
 import { X } from 'lucide-react';
 import { DomainBadge } from './DomainBadge';
 import { CitationChip } from './CitationChip';
+import { ExplainabilityCard } from './ExplainabilityCard';
+import { FlagIcon } from './FlagIcon';
 import { IconButton } from './ui/IconButton';
 import { getDomainMeta } from '@/lib/domain';
-import { getFlag } from '@/lib/geo';
+import { getCountryName } from '@/lib/geo';
 import { formatTimestamp } from '@/lib/time';
 import { ESCALATION_LABELS } from '@/lib/types/sim-event';
-import type { SimEvent } from '@/lib/types/sim-event';
+import type { SimEvent, TriggeringFactor } from '@/lib/types/sim-event';
 
 export interface EventDetailCardProps {
   event: SimEvent;
   onClose: () => void;
+  /**
+   * Optional click-through for triggering factors (kind=event opens that
+   * source event's detail card; other kinds are non-interactive for now).
+   */
+  onFactorClick?: (factor: TriggeringFactor, event: SimEvent) => void;
 }
 
-export function EventDetailCard({ event, onClose }: EventDetailCardProps) {
+export function EventDetailCard({ event, onClose, onFactorClick }: EventDetailCardProps) {
   const meta = getDomainMeta(event.domain);
   const actionLabel = event.action_type.replace(/_/g, ' ').toUpperCase();
   const escalationLabel = ESCALATION_LABELS[event.escalation_rung];
@@ -83,17 +90,21 @@ export function EventDetailCard({ event, onClose }: EventDetailCardProps) {
 
       {/* Body */}
       <div className="p-6 space-y-5">
-        {/* Actor → Target */}
-        <div className="flex items-center justify-between px-2">
-          <div className="text-center">
-            <span className="text-3xl" role="img" aria-label={event.actor_country}>
-              {getFlag(event.actor_country)}
-            </span>
-            <p className="font-mono text-xs text-on-surface-variant mt-1">
+        {/* Actor → Target — SVG flag + readable country name underneath. */}
+        <div className="flex items-start justify-between px-2 gap-3">
+          <div className="flex flex-col items-center text-center min-w-0">
+            <FlagIcon
+              iso3={event.actor_country}
+              className="w-12 h-8 ring-1 ring-outline-variant/40 shrink-0"
+            />
+            <p className="font-sans text-sm font-semibold text-on-surface mt-2 leading-tight">
+              {getCountryName(event.actor_country)}
+            </p>
+            <p className="font-mono text-[10px] text-on-surface-variant tracking-widest mt-0.5">
               {event.actor_country}
             </p>
           </div>
-          <div className="flex-1 flex flex-col items-center px-4">
+          <div className="flex-1 flex flex-col items-center px-2 pt-3">
             <div
               className="w-full h-px relative"
               style={{
@@ -112,11 +123,26 @@ export function EventDetailCard({ event, onClose }: EventDetailCardProps) {
               {getDomainMeta(event.domain).label}
             </p>
           </div>
-          <div className="text-center">
-            <span className="text-3xl" role="img" aria-label={event.target_country ?? 'ALL'}>
-              {event.target_country ? getFlag(event.target_country) : '🌐'}
-            </span>
-            <p className="font-mono text-xs text-on-surface-variant mt-1">
+          <div className="flex flex-col items-center text-center min-w-0">
+            {event.target_country ? (
+              <FlagIcon
+                iso3={event.target_country}
+                className="w-12 h-8 ring-1 ring-outline-variant/40 shrink-0"
+              />
+            ) : (
+              <span
+                className="w-12 h-8 inline-flex items-center justify-center text-lg ring-1 ring-outline-variant/40 bg-surface-container-low"
+                role="img"
+                aria-label="Global"
+                title="No specific target"
+              >
+                🌐
+              </span>
+            )}
+            <p className="font-sans text-sm font-semibold text-on-surface mt-2 leading-tight">
+              {event.target_country ? getCountryName(event.target_country) : 'Global'}
+            </p>
+            <p className="font-mono text-[10px] text-on-surface-variant tracking-widest mt-0.5">
               {event.target_country ?? 'ALL'}
             </p>
           </div>
@@ -134,17 +160,10 @@ export function EventDetailCard({ event, onClose }: EventDetailCardProps) {
           </p>
         </div>
 
-        {/* Rationale */}
-        {event.rationale && (
-          <div className="space-y-2">
-            <p className="font-mono text-[10px] text-on-surface-variant uppercase tracking-widest border-b border-outline-variant/30 pb-1">
-              Rationale
-            </p>
-            <p className="font-sans text-xs text-on-surface leading-relaxed">
-              {event.rationale}
-            </p>
-          </div>
-        )}
+        {/* Explainability — structured "did X because Y in hopes of Z" triplet,
+            plus collapsed raw rationale. Falls back to rationale-only for
+            legacy events that have no structured triplet. */}
+        <ExplainabilityCard event={event} onFactorClick={onFactorClick} />
 
         {/* Citations */}
         {event.citations.length > 0 && (

@@ -42,6 +42,7 @@ function makeEvent(overrides: Partial<SimEvent> = {}): SimEvent {
     rationale: 'Test reasoning trace.',
     citations: [],
     escalation_rung: 0,
+    explainability: null,
     timestamp: new Date().toISOString(),
     ...overrides,
   };
@@ -107,7 +108,11 @@ describe('AgentDrawer', () => {
     expect(screen.getByText(/mobilize reserves/i)).toBeInTheDocument();
   });
 
-  it('expands decision reasoning on click', () => {
+  it('renders decision reasoning by default, collapses on click, re-expands on second click', () => {
+    // AgentDrawer now starts every decision EXPANDED so the
+    // "X did Y because Z in hopes of W" card is visible inline
+    // without requiring a click — matching the Taiwan-demo visual.
+    // Click once → collapses.  Click again → re-expands.
     useSimStore.getState().setSelectedCountry('TWN');
     useSimStore.getState().addEvent(
       makeEvent({ turn: 5, rationale: 'Important reasoning text here.' }),
@@ -122,8 +127,15 @@ describe('AgentDrawer', () => {
       />,
     );
 
-    // Find and click the decision row
+    // Visible by default (no click needed)
+    expect(screen.getByText('Important reasoning text here.')).toBeInTheDocument();
+
+    // Click → collapses
     const decisionBtn = screen.getByRole('button', { name: /t_05/i });
+    fireEvent.click(decisionBtn);
+    expect(screen.queryByText('Important reasoning text here.')).not.toBeInTheDocument();
+
+    // Click again → re-expands
     fireEvent.click(decisionBtn);
     expect(screen.getByText('Important reasoning text here.')).toBeInTheDocument();
   });

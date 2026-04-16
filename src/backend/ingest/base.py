@@ -69,8 +69,22 @@ class _RetryableHTTPError(Exception):
 
 
 def _is_retryable(exc: BaseException) -> bool:
-    """Return True if the exception should trigger a retry attempt."""
+    """Return True if the exception should trigger a retry attempt.
+
+    We retry on:
+      * ``_RetryableHTTPError`` — our wrapper around 5xx / 429 responses.
+      * ``httpx.ConnectError`` / ``httpx.ReadError`` / ``httpx.RemoteProtocolError``
+        — transient network glitches (DNS blip, container-bridge hiccup,
+        mid-stream disconnect). These used to kill the whole source run with
+        ``ConnectError('[Errno -2] Name or service not known')`` even though
+        the underlying issue was fully transient.
+    """
     if isinstance(exc, _RetryableHTTPError):
+        return True
+    if isinstance(
+        exc,
+        (httpx.ConnectError, httpx.ReadError, httpx.RemoteProtocolError),
+    ):
         return True
     return False
 

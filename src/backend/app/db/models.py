@@ -116,6 +116,10 @@ class Country(Base):
     doctrine: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     red_lines: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
     military_assets: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    # Markdown persona text (leadership, decision style, risk tolerance). Nullable
+    # so rows predating the persona migration continue to load; the country-agent
+    # prompt template falls back gracefully when persona is absent.
+    persona: Mapped[str | None] = mapped_column(Text, nullable=True)
     gdp_usd: Mapped[float | None] = mapped_column(Numeric(precision=20, scale=2), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -421,6 +425,13 @@ class SimEvent(Base):
     )
     # Integer rung 0..5; validated by EscalationRung Pydantic enum at write time
     escalation_rung: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Structured "X did Y because Z in hopes of W" triplet. Nullable so
+    # legacy rows and seed events render via the rationale-only fallback view.
+    # Shape (when present): {summary, intended_outcome, triggering_factors:[
+    #   {kind, ref, note, verified}, ...]}
+    explainability: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB, nullable=True
+    )
     timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

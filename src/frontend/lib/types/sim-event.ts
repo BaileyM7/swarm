@@ -30,6 +30,38 @@ export interface Citation {
   ref: string;    // source-specific event reference ID
 }
 
+/** The class of evidence an agent cited as a triggering factor. */
+export type FactorKind =
+  | 'event'        // ref is a SimEvent UUID from the agent's perception
+  | 'red_line'     // ref is a red-line slug (or first 6 words of description)
+  | 'memory'       // ref is "turn:N" pointing at a recalled memory turn
+  | 'posture'      // ref is an ordered ISO3 pair like "USA-TWN"
+  | 'perception';  // ref is a dotted field path within the perception summary
+
+/** One concrete piece of evidence the agent cited when deciding to act. */
+export interface TriggeringFactor {
+  kind: FactorKind;
+  ref: string;
+  note: string;
+  /**
+   * False when the SimLoop could not resolve `ref` against the actor's
+   * recent perception (e.g. a `kind=event` ref that did not appear).
+   * UI should render unverified factors muted.
+   */
+  verified: boolean;
+}
+
+/**
+ * Structured explanation of a single agent decision. Reads as:
+ *   actor did `summary` because of `triggering_factors` in hopes of `intended_outcome`.
+ * Mirrors Explainability (Python).
+ */
+export interface Explainability {
+  summary: string;
+  triggering_factors: TriggeringFactor[];
+  intended_outcome: string;
+}
+
 /**
  * Full SimEvent as stored in Postgres and streamed over WebSocket.
  * Mirrors SimEvent (Python) exactly.
@@ -47,5 +79,10 @@ export interface SimEvent {
   rationale: string;                 // LLM chain-of-thought
   citations: Citation[];
   escalation_rung: EscalationRung;
+  /**
+   * Structured explainability triplet. Null for legacy events emitted
+   * before the feature shipped, and for scenario seed events.
+   */
+  explainability: Explainability | null;
   timestamp: string;                 // ISO-8601
 }

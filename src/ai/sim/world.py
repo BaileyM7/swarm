@@ -23,7 +23,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from shared.schemas.sim_event import Domain, SimEvent
+from ai.agents.leader_profile import LeaderProfile
+from shared.schemas.sim_event import Domain, Explainability, SimEvent
 
 
 # ---------------------------------------------------------------------------
@@ -111,6 +112,45 @@ class CountryState(BaseModel):
     )
     resource_budget: ResourceBudget = Field(default_factory=ResourceBudget)
     doctrine: str = Field(default="", description="Free-form doctrine text fed to the prompt.")
+    persona: str = Field(
+        default="",
+        description=(
+            "Markdown persona (leadership, decision style, risk tolerance, "
+            "escalation preferences). Stable across all turns of a sim; "
+            "injected into the agent prompt to shape reasoning voice."
+        ),
+    )
+    leader_profile: LeaderProfile | None = Field(
+        default=None,
+        description=(
+            "Structured Big-Five (OCEAN) profile parsed from the persona file's "
+            "YAML frontmatter. None when the persona file omits frontmatter; "
+            "the prompt then renders a placeholder line."
+        ),
+    )
+    consecutive_no_action_turns: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Number of consecutive accepted turns in which this country chose "
+            "(or fell back to) no_action. Incremented in WorldState.apply when "
+            "action_type == 'no_action', reset to 0 on any other action. Used "
+            "by render_country_prompt to inject a streak-pressure line when "
+            "the count crosses a threshold — keeps agents from drifting into "
+            "permanent inaction without justification."
+        ),
+    )
+    recent_domains: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Rolling window of the last N non-no_action domains this country "
+            "used, most-recent-last. Maxlen is enforced in apply(); the "
+            "prompt reads this to nudge the agent toward cross-domain "
+            "variety when the same domain keeps repeating. Demo-centric: "
+            "real crises do cluster within one domain, but showing variety "
+            "makes for a more informative visualization."
+        ),
+    )
 
 
 class Relationship(BaseModel):
@@ -166,6 +206,14 @@ class ProposedAction(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
     rationale: str = ""
     estimated_escalation_rung: int = Field(default=0, ge=0, le=5)
+    explainability: Explainability | None = Field(
+        default=None,
+        description=(
+            "Structured triplet (summary / triggering_factors / intended_outcome) "
+            "extracted from the agent's tool-call. None for fallback no_action "
+            "paths or seed events; populated for every real agent decision."
+        ),
+    )
 
 
 class ResolvedOutcome(str, enum.Enum):
@@ -287,6 +335,22 @@ class WorldState(BaseModel):
             "target": proposed.target,
             "rung": action.final_escalation_rung,
         }
+
+        # --- Inactivity streak tracker ----------------------------------
+        # Incremented on no_action (including LLM-failure fallbacks), reset
+        # on any substantive action. Consumed by render_country_prompt to
+        # inject a pressure line at the threshold.
+        if proposed.action_type == "no_action":
+            actor_state.consecutive_no_action_turns += 1
+        else:
+            actor_state.consecutive_no_action_turns = 0
+            # Record the domain used for variety tracking.  no_action calls
+            # are excluded — they're handled by the separate inactivity
+            # streak.  We cap the window at 3; the prompt only needs to
+            # know "last 2 were the same" to nudge.
+            window = list(actor_state.recent_domains)
+            window.append(proposed.domain.value)
+            actor_state.recent_domains = window[-3:]
 
         # --- Red-line escalation ----------------------------------------
         if proposed.target and proposed.target in self.countries and action.final_escalation_rung >= 3:

@@ -27,7 +27,14 @@ from typing import Any, Protocol
 import structlog
 from pydantic import BaseModel, ConfigDict, Field
 
-from shared.schemas.sim_event import Domain
+from ai.agents.leader_profile import LeaderProfile, render_leader_profile_block
+from ai.sim.signals import Signal, render_signals_block
+from shared.schemas.sim_event import (
+    Domain,
+    Explainability,
+    FactorKind,
+    TriggeringFactor,
+)
 
 from ai.sim.world import ProposedAction
 
@@ -49,7 +56,64 @@ _COMMON_SCHEMA_BASE: dict[str, Any] = {
         "maximum": 5,
         "description": "0=peacetime, 1=gray_zone, 2=coercive, 3=limited, 4=regional, 5=general.",
     },
+    # Structured explainability: required on every action so the UI can render
+    # "X did Y because Z in hopes of W" without parsing free prose.
+    "summary": {
+        "type": "string",
+        "maxLength": 160,
+        "description": (
+            "One verb-phrase line naming what you did. "
+            "e.g. 'Imposed targeted sanctions on TSMC exports.' Max 160 chars."
+        ),
+    },
+    "triggering_factors": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 4,
+        "description": (
+            "1–4 evidentiary factors that drove this choice. Each must point to "
+            "something concrete in your perception — do not invent factors."
+        ),
+        "items": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "enum": ["event", "red_line", "memory", "posture", "perception"],
+                    "description": (
+                        "Class of evidence: 'event' for a SimEvent UUID from "
+                        "recent_events_involving_me; 'red_line' for one of your "
+                        "declared red-line slugs; 'memory' for a recalled memory "
+                        "(ref='turn:N'); 'posture' for an ISO3-ISO3 pair you "
+                        "observed; 'perception' for a perception field path."
+                    ),
+                },
+                "ref": {
+                    "type": "string",
+                    "description": (
+                        "Reference whose meaning depends on `kind`. Event UUID, "
+                        "red-line slug or first 6 words, 'turn:N', 'USA-TWN', etc."
+                    ),
+                },
+                "note": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "description": "One short clause explaining what about this factor drove the choice.",
+                },
+            },
+            "required": ["kind", "ref", "note"],
+        },
+    },
+    "intended_outcome": {
+        "type": "string",
+        "maxLength": 240,
+        "description": "One sentence stating the result you hope this action causes.",
+    },
 }
+
+
+# Required fields the explainability triplet adds to every tool's `required` list.
+_EXPLAINABILITY_REQUIRED: list[str] = ["summary", "triggering_factors", "intended_outcome"]
 
 
 COUNTRY_AGENT_TOOLS: list[dict[str, Any]] = [
@@ -71,7 +135,10 @@ COUNTRY_AGENT_TOOLS: list[dict[str, Any]] = [
                 "message": {"type": "string", "description": "Public text of the statement."},
                 **_COMMON_SCHEMA_BASE,
             },
-            "required": ["target", "action_type", "severity", "message", "rationale"],
+            "required": [
+                "target", "action_type", "severity", "message", "rationale",
+                *_EXPLAINABILITY_REQUIRED,
+            ],
         },
     },
     {
@@ -91,7 +158,10 @@ COUNTRY_AGENT_TOOLS: list[dict[str, Any]] = [
                 },
                 **_COMMON_SCHEMA_BASE,
             },
-            "required": ["target", "instrument", "magnitude", "rationale"],
+            "required": [
+                "target", "instrument", "magnitude", "rationale",
+                *_EXPLAINABILITY_REQUIRED,
+            ],
         },
     },
     {
@@ -114,7 +184,10 @@ COUNTRY_AGENT_TOOLS: list[dict[str, Any]] = [
                 },
                 **_COMMON_SCHEMA_BASE,
             },
-            "required": ["channel", "target", "content_type", "rationale"],
+            "required": [
+                "channel", "target", "content_type", "rationale",
+                *_EXPLAINABILITY_REQUIRED,
+            ],
         },
     },
     {
@@ -134,7 +207,10 @@ COUNTRY_AGENT_TOOLS: list[dict[str, Any]] = [
                 },
                 **_COMMON_SCHEMA_BASE,
             },
-            "required": ["target", "vector", "intent", "rationale"],
+            "required": [
+                "target", "vector", "intent", "rationale",
+                *_EXPLAINABILITY_REQUIRED,
+            ],
         },
     },
     {
@@ -151,7 +227,10 @@ COUNTRY_AGENT_TOOLS: list[dict[str, Any]] = [
                 },
                 **_COMMON_SCHEMA_BASE,
             },
-            "required": ["target", "asset", "posture", "rationale"],
+            "required": [
+                "target", "asset", "posture", "rationale",
+                *_EXPLAINABILITY_REQUIRED,
+            ],
         },
     },
     {
@@ -163,7 +242,10 @@ COUNTRY_AGENT_TOOLS: list[dict[str, Any]] = [
                 "reason": {"type": "string"},
                 **_COMMON_SCHEMA_BASE,
             },
-            "required": ["reason", "rationale"],
+            "required": [
+                "reason", "rationale",
+                *_EXPLAINABILITY_REQUIRED,
+            ],
         },
     },
 ]
@@ -208,6 +290,11 @@ class Perception:
     resource_budget: dict[str, int]
     world_view: dict[str, Any]  # from WorldState.summarize_for()
     memories: list[MemoryRecord] = field(default_factory=list)
+    persona: str = ""
+    leader_profile: LeaderProfile | None = None
+    recent_signals: list[Signal] = field(default_factory=list)
+    consecutive_no_action_turns: int = 0
+    recent_domains: list[str] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -253,10 +340,131 @@ class LLMClient(Protocol):
 
 _PROMPT_PATH = Path(__file__).parent / "prompts" / "country_agent.md"
 
+# Nudges — defaults chosen to be noticeable but not pushy.  Tunable via env
+# so a running sim can be tightened without a code change.
+_NO_ACTION_STREAK_THRESHOLD = int(os.environ.get("NO_ACTION_STREAK_THRESHOLD", "2"))
+_HIGH_SIGNAL_MAGNITUDE_THRESHOLD = float(
+    os.environ.get("HIGH_SIGNAL_MAGNITUDE_THRESHOLD", "0.7")
+)
+# Demo-oriented: if a country has repeated the same domain this many turns
+# in a row, the prompt nudges it to consider a cross-domain move.  Lowered
+# below 2 would force unnatural churn; higher than 3 rarely fires.
+_DOMAIN_REPEAT_THRESHOLD = int(os.environ.get("DOMAIN_REPEAT_THRESHOLD", "2"))
+
+# ---------------------------------------------------------------------------
+# Prompt-caching boundary
+# ---------------------------------------------------------------------------
+#
+# Anthropic prompt caching is billed at 0.1× for cache reads, 1.25× for
+# writes, with a 5-minute TTL.  To get the benefit, the request must carry
+# a ``cache_control`` marker at the end of the STABLE prefix of the system
+# prompt.  Everything before the marker is cached; everything after is
+# re-billed at normal rates every turn.
+#
+# The country-agent template is laid out so the cut is natural:
+#   * Stable (cached): doctrine + red lines + leader OCEAN profile +
+#     persona + universal rules — all identical turn-to-turn for a given
+#     country.  ~2.2k tokens typically.
+#   * Volatile (not cached): recent intelligence + current posture +
+#     resource budget + memory + redacted world view — changes every turn.
+#     ~1.8k tokens typically.
+#
+# The boundary is the literal "## Recent intelligence …" header.  If the
+# template ever moves that header, update this constant.  When the marker
+# is missing (older template / custom renderer), ``_split_for_cache``
+# returns the whole text as the stable prefix with an empty suffix — a
+# safe degradation: caching still works, just less efficiently.
+_PROMPT_CACHE_BOUNDARY = "## Recent intelligence (last 24h, top signals)"
+
+
+def _split_for_cache(rendered: str) -> tuple[str, str]:
+    """Split a rendered system prompt into (cacheable_prefix, volatile_suffix).
+
+    The split happens at the first occurrence of ``_PROMPT_CACHE_BOUNDARY``;
+    the boundary line itself lives in the volatile suffix so the intel
+    header always renders fresh at the top of the per-turn content.
+    """
+    idx = rendered.find(_PROMPT_CACHE_BOUNDARY)
+    if idx < 0:
+        return rendered, ""
+    return rendered[:idx].rstrip() + "\n", rendered[idx:]
+
 
 def _load_prompt_template() -> str:
     """Read the country-agent system-prompt template from disk."""
     return _PROMPT_PATH.read_text(encoding="utf-8")
+
+
+def _streak_pressure_line(streak: int) -> str:
+    """Render a one-line streak warning when the threshold is crossed.
+
+    Respects agent agency — doesn't forbid no_action, just flags the
+    cumulative reputational cost so the LLM knows it's a non-trivial
+    choice this turn.  Returns an empty string below the threshold.
+    """
+    if streak < _NO_ACTION_STREAK_THRESHOLD:
+        return ""
+    return (
+        f"\n\n⚠ **Inactivity streak: {streak} consecutive turns of no_action.**\n"
+        "Your peers are updating their read of you toward *disengaged*.\n"
+        "Inaction remains valid but requires explicit justification this turn —\n"
+        "either articulate why continued restraint serves your doctrine, or act."
+    )
+
+
+def _domain_variety_pressure_line(recent_domains: list[str]) -> str:
+    """Render a cross-domain nudge when the country has repeated a domain.
+
+    Fires when the last ``_DOMAIN_REPEAT_THRESHOLD`` entries in
+    ``recent_domains`` are all the same domain.  Respects agency — the
+    prompt says "consider" not "must" — but raises the rhetorical cost of
+    picking the same domain a third time.  Demo-oriented: real crises do
+    cluster within a single domain, but the visualization reads better
+    when action types vary across the globe arcs.
+    """
+    if len(recent_domains) < _DOMAIN_REPEAT_THRESHOLD:
+        return ""
+    tail = recent_domains[-_DOMAIN_REPEAT_THRESHOLD:]
+    if len(set(tail)) != 1:
+        return ""
+    repeated = tail[0]
+    # Available alternatives — pick any domain not equal to the repeated one.
+    alternatives = [
+        d for d in ("economic", "cyber", "info", "kinetic_limited", "diplomatic")
+        if d != repeated
+    ]
+    alt_phrase = ", ".join(alternatives)
+    return (
+        f"\n\n⚠ **Domain-repetition: your last {_DOMAIN_REPEAT_THRESHOLD} "
+        f"actions were all `{repeated}`.**\n"
+        "Real crises rarely stay in one domain — adversaries read single-"
+        "domain pounding as bluff.\n"
+        f"Consider whether a move in a different domain ({alt_phrase}) "
+        "would advance your strategy further than repeating.\n"
+        "Repeating is still permitted if your doctrine truly requires it — "
+        "but justify it explicitly."
+    )
+
+
+def _high_signal_pressure_line(signals: list["Signal"]) -> str:
+    """Render a one-line high-magnitude pressure when any signal crosses
+    the threshold.  Called from render_country_prompt.  Returns empty when
+    no signal is above the threshold (which is the common case).
+    """
+    if not signals:
+        return ""
+    top_magnitude = max(s.magnitude for s in signals)
+    if top_magnitude < _HIGH_SIGNAL_MAGNITUDE_THRESHOLD:
+        return ""
+    loud = max(signals, key=lambda s: s.magnitude)
+    return (
+        f"\n\n⚠ **High-magnitude signal this turn (mag {top_magnitude:.2f}): "
+        f"{loud.source}.**\n"
+        "Strong signals of this size usually warrant an explicit response.\n"
+        "Ignoring this signal is permitted but must be reasoned — cite it in\n"
+        "`triggering_factors` with a rationale for why it does NOT change\n"
+        "your posture, or act on it."
+    )
 
 
 def render_country_prompt(perception: Perception, memories: list[MemoryRecord]) -> str:
@@ -287,6 +495,18 @@ def render_country_prompt(perception: Perception, memories: list[MemoryRecord]) 
             if perception.red_lines
             else "(none declared)"
         ),
+        "{leader_profile}": render_leader_profile_block(perception.leader_profile),
+        # Append optional pressure lines to the signals block so the warning
+        # reads as part of the intelligence section rather than a detached
+        # scold. Both return "" below their thresholds — common case is no
+        # change to the rendered block.
+        "{recent_signals}": (
+            render_signals_block(perception.recent_signals)
+            + _streak_pressure_line(perception.consecutive_no_action_turns)
+            + _high_signal_pressure_line(perception.recent_signals)
+            + _domain_variety_pressure_line(perception.recent_domains)
+        ),
+        "{persona}": perception.persona or "(no persona authored for this country)",
         "{current_posture}": json.dumps(perception.current_posture, indent=2),
         "{resource_budget}": json.dumps(perception.resource_budget, indent=2),
         "{memory_snippets}": memory_block,
@@ -303,6 +523,53 @@ def render_country_prompt(perception: Perception, memories: list[MemoryRecord]) 
 # ---------------------------------------------------------------------------
 
 
+def _extract_explainability(args: dict[str, Any]) -> Explainability | None:
+    """Build an :class:`Explainability` from raw tool-call args, or None.
+
+    Returns None (not a partial object) if any of the three required pieces is
+    missing or unparseable — keeps invariant "if Explainability exists, it is
+    fully populated and validated."
+    """
+    summary = str(args.get("summary", "")).strip()
+    intended = str(args.get("intended_outcome", "")).strip()
+    raw_factors = args.get("triggering_factors") or []
+    if not summary or not intended or not isinstance(raw_factors, list) or not raw_factors:
+        return None
+
+    factors: list[TriggeringFactor] = []
+    for raw in raw_factors:
+        if not isinstance(raw, dict):
+            continue
+        kind_str = str(raw.get("kind", "")).strip().lower()
+        ref = str(raw.get("ref", "")).strip()
+        note = str(raw.get("note", "")).strip()
+        if not kind_str or not ref or not note:
+            continue
+        try:
+            kind = FactorKind(kind_str)
+        except ValueError:
+            log.debug("explainability_unknown_factor_kind", kind=kind_str)
+            continue
+        try:
+            factors.append(TriggeringFactor(kind=kind, ref=ref, note=note))
+        except Exception as exc:  # noqa: BLE001
+            log.debug("explainability_factor_dropped", error=str(exc), ref=ref)
+            continue
+
+    if not factors:
+        return None
+
+    try:
+        return Explainability(
+            summary=summary[:160],
+            triggering_factors=factors[:4],
+            intended_outcome=intended[:240],
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("explainability_build_failed", error=str(exc))
+        return None
+
+
 def tool_call_to_action(actor: str, call: ToolCall) -> ProposedAction:
     """Convert an Anthropic tool-use call into a ``ProposedAction``.
 
@@ -316,6 +583,7 @@ def tool_call_to_action(actor: str, call: ToolCall) -> ProposedAction:
     args = call.args
     rationale = str(args.get("rationale", ""))
     estimated = int(args.get("estimated_escalation_rung", 0))
+    explainability = _extract_explainability(args)
 
     if name == "diplomatic_action":
         return ProposedAction(
@@ -329,6 +597,7 @@ def tool_call_to_action(actor: str, call: ToolCall) -> ProposedAction:
             },
             rationale=rationale,
             estimated_escalation_rung=estimated,
+            explainability=explainability,
         )
     if name == "economic_action":
         return ProposedAction(
@@ -342,6 +611,7 @@ def tool_call_to_action(actor: str, call: ToolCall) -> ProposedAction:
             },
             rationale=rationale,
             estimated_escalation_rung=estimated,
+            explainability=explainability,
         )
     if name == "information_action":
         return ProposedAction(
@@ -355,6 +625,7 @@ def tool_call_to_action(actor: str, call: ToolCall) -> ProposedAction:
             },
             rationale=rationale,
             estimated_escalation_rung=estimated,
+            explainability=explainability,
         )
     if name == "cyber_action":
         return ProposedAction(
@@ -368,6 +639,7 @@ def tool_call_to_action(actor: str, call: ToolCall) -> ProposedAction:
             },
             rationale=rationale,
             estimated_escalation_rung=estimated,
+            explainability=explainability,
         )
     if name == "kinetic_action":
         posture = str(args.get("posture", "show_of_force"))
@@ -384,6 +656,7 @@ def tool_call_to_action(actor: str, call: ToolCall) -> ProposedAction:
             },
             rationale=rationale,
             estimated_escalation_rung=estimated,
+            explainability=explainability,
         )
     if name == "no_action":
         return ProposedAction(
@@ -394,6 +667,7 @@ def tool_call_to_action(actor: str, call: ToolCall) -> ProposedAction:
             payload={"reason": args.get("reason", "")},
             rationale=rationale,
             estimated_escalation_rung=0,
+            explainability=explainability,
         )
     raise ValueError(f"Unknown tool call: {name}")
 
@@ -423,6 +697,7 @@ class CountryAgent:
         doctrine: str,
         red_lines: list[str],
         llm: LLMClient,
+        persona: str = "",
     ) -> None:
         """
         Args:
@@ -431,6 +706,9 @@ class CountryAgent:
             doctrine: Free-form doctrine text.
             red_lines: List of red-line description strings.
             llm: A client implementing :class:`LLMClient`.
+            persona: Markdown persona (leadership, decision style, risk
+                tolerance). Stable for the lifetime of the sim; injected
+                into every turn's system prompt.
         """
         if len(code) != 3:
             raise ValueError(f"code must be ISO-3 (got {code!r})")
@@ -438,6 +716,7 @@ class CountryAgent:
         self.name = name
         self.doctrine = doctrine
         self.red_lines = red_lines
+        self.persona = persona
         self.llm = llm
 
     async def act(
@@ -531,19 +810,42 @@ class ChatAnthropicClient:
     """
 
     def __init__(self, model: str, api_key: str, temperature: float = 0.3) -> None:
-        # Lazy import so tests don't need the heavy deps.
-        from langchain_anthropic import ChatAnthropic  # type: ignore[import-not-found]
+        # We used to wrap langchain_anthropic.ChatAnthropic, but that adapter
+        # silently strips the ``cache_control`` key from content blocks when
+        # it serialises SystemMessage for the outbound request — confirmed by
+        # inspecting the actual /v1/messages payload (no cache_control field)
+        # and the absence of ``cache_read_input_tokens`` in responses.  The
+        # direct anthropic SDK preserves the marker and returns cache-hit
+        # usage telemetry so we can verify it's working.
+        #
+        # Lazy-import so unit tests that never hit the real client don't need
+        # the anthropic dep imported.
+        from anthropic import AsyncAnthropic  # type: ignore[import-not-found]
 
+        self._client: Any = AsyncAnthropic(api_key=api_key)
+        self._model = model
+        self._temperature = temperature
         # max_tokens trimmed for demo — country agents emit one tool-call per
         # turn (a small JSON object plus 2-4 sentences of rationale). 2048 was
-        # massive overkill and cost meaningful ITPM budget. Override via
+        # massive overkill and cost meaningful ITPM budget.  Override via
         # AGENT_MAX_TOKENS env if reasoning feels truncated.
-        self._chat = ChatAnthropic(
-            model=model,
-            anthropic_api_key=api_key,
-            temperature=temperature,
-            max_tokens=int(os.environ.get("AGENT_MAX_TOKENS", "512")),
-        )
+        self._max_tokens = int(os.environ.get("AGENT_MAX_TOKENS", "512"))
+
+    @staticmethod
+    def _build_cached_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Attach cache_control to the LAST tool in the list.
+
+        Anthropic's semantics: cache_control on a tool caches every tool up
+        to and including that one.  So one marker on the final tool caches
+        the entire tools array — ~1k tokens that would otherwise re-bill on
+        every single turn.  Safe to mutate via dict-copy; the global
+        COUNTRY_AGENT_TOOLS constant stays untouched.
+        """
+        if not tools:
+            return tools
+        cached = [dict(t) for t in tools]
+        cached[-1] = {**cached[-1], "cache_control": {"type": "ephemeral"}}
+        return cached
 
     async def ainvoke_tools(
         self,
@@ -551,30 +853,71 @@ class ChatAnthropicClient:
         human_prompt: str,
         tools: list[dict[str, Any]],
     ) -> LLMResponse:
-        """Invoke the chat model with the given tool schemas bound."""
-        from langchain_core.messages import HumanMessage, SystemMessage  # type: ignore[import-not-found]
+        """Invoke the chat model with the given tool schemas bound.
 
-        bound = self._chat.bind_tools(tools)
-        result = await bound.ainvoke(
-            [SystemMessage(content=system_prompt), HumanMessage(content=human_prompt)]
+        Outbound request shape:
+          * ``system`` — list of two text blocks.  The first carries
+            ``cache_control=ephemeral`` and holds the stable persona /
+            OCEAN / doctrine / rules prefix.  The second holds the
+            volatile intel / posture / memory / world-view tail.
+          * ``tools`` — last tool carries ``cache_control=ephemeral`` so
+            Anthropic caches the entire tools array across turns.
+
+        On cache hits the response ``usage`` block reports a non-zero
+        ``cache_read_input_tokens``; the INPUT TPM budget is charged at
+        ~10% of the cached portion, which is what relieves rate-limit
+        pressure during the 7-agent fan-out.
+        """
+        cacheable_prefix, volatile_suffix = _split_for_cache(system_prompt)
+        system_blocks: list[dict[str, Any]] = [
+            {
+                "type": "text",
+                "text": cacheable_prefix,
+                "cache_control": {"type": "ephemeral"},
+            }
+        ]
+        if volatile_suffix:
+            system_blocks.append({"type": "text", "text": volatile_suffix})
+
+        response = await self._client.messages.create(
+            model=self._model,
+            max_tokens=self._max_tokens,
+            temperature=self._temperature,
+            system=system_blocks,
+            tools=self._build_cached_tools(tools),
+            messages=[{"role": "user", "content": human_prompt}],
         )
 
+        # Emit cache telemetry at DEBUG — lets us confirm caching works by
+        # grepping logs for non-zero cache_read_input_tokens.
+        usage = getattr(response, "usage", None)
+        if usage is not None:
+            log.debug(
+                "agent_llm_usage",
+                input_tokens=getattr(usage, "input_tokens", 0),
+                output_tokens=getattr(usage, "output_tokens", 0),
+                cache_creation_input_tokens=getattr(
+                    usage, "cache_creation_input_tokens", 0
+                ),
+                cache_read_input_tokens=getattr(usage, "cache_read_input_tokens", 0),
+            )
+
         tool_calls: list[ToolCall] = []
-        # LangChain normalises Anthropic tool calls into ``.tool_calls`` as a
-        # list of ``{name, args, id}`` dicts.
-        for tc in getattr(result, "tool_calls", []) or []:
-            tool_calls.append(
-                ToolCall(
-                    name=tc.get("name", ""),
-                    args=tc.get("args", {}) or {},
-                    id=tc.get("id", ""),
+        content_text_parts: list[str] = []
+        for block in response.content:
+            block_type = getattr(block, "type", None)
+            if block_type == "tool_use":
+                tool_calls.append(
+                    ToolCall(
+                        name=getattr(block, "name", "") or "",
+                        args=dict(getattr(block, "input", {}) or {}),
+                        id=getattr(block, "id", "") or "",
+                    )
                 )
-            )
-        content = ""
-        if isinstance(result.content, str):
-            content = result.content
-        elif isinstance(result.content, list):
-            content = " ".join(
-                str(block.get("text", "")) for block in result.content if isinstance(block, dict)
-            )
-        return LLMResponse(tool_calls=tool_calls, content=content)
+            elif block_type == "text":
+                content_text_parts.append(getattr(block, "text", "") or "")
+
+        return LLMResponse(
+            tool_calls=tool_calls,
+            content=" ".join(p for p in content_text_parts if p),
+        )

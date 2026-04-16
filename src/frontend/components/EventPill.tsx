@@ -3,6 +3,7 @@
 import type { SimEvent } from '@/lib/types/sim-event';
 import { getDomainMeta } from '@/lib/domain';
 import { formatShortTime } from '@/lib/time';
+import { FlagIcon } from './FlagIcon';
 
 export interface EventPillProps {
   event: SimEvent;
@@ -46,10 +47,24 @@ export function EventPill({ event, isHighlighted, onClick }: EventPillProps) {
           </p>
           {seed && <SeedBadge />}
         </div>
-        <p className="text-xs font-bold text-on-surface truncate w-32">
-          {event.actor_country}
-          {event.target_country ? ` → ${event.target_country}` : ''}
-        </p>
+        <div className="flex items-center gap-1 w-32 truncate text-xs font-bold text-on-surface">
+          <FlagIcon iso3={event.actor_country} className="w-4 h-3 shrink-0" />
+          <span className="truncate">
+            {event.actor_country}
+            {event.target_country ? (
+              <>
+                {' → '}
+                <FlagIcon
+                  iso3={event.target_country}
+                  className="inline-block w-4 h-3 align-middle mx-0.5"
+                />
+                {event.target_country}
+              </>
+            ) : (
+              ''
+            )}
+          </span>
+        </div>
         <p className="font-mono text-[9px] text-on-surface-variant truncate w-32">
           {actionLabel.slice(0, 18)}
         </p>

@@ -6,6 +6,7 @@
 
 countries:
   - iso3: CHN
+    persona_file: personas/CHN.md
     name: People's Republic of China
     lat: 35.86
     lon: 104.19
@@ -34,6 +35,7 @@ countries:
       - "Japanese remilitarisation including offensive strike assets"
 
   - iso3: TWN
+    persona_file: personas/TWN.md
     name: Taiwan
     lat: 23.69
     lon: 120.96
@@ -55,6 +57,7 @@ countries:
       - "Missile strike on Taiwanese territory"
 
   - iso3: USA
+    persona_file: personas/USA.md
     name: United States of America
     lat: 37.09
     lon: -95.71
@@ -84,6 +87,7 @@ countries:
       - "Cyber attack on US critical infrastructure with attribution"
 
   - iso3: JPN
+    persona_file: personas/JPN.md
     name: Japan
     lat: 36.20
     lon: 138.25
@@ -105,6 +109,7 @@ countries:
       - "Seizure of Senkaku/Diaoyu islands"
 
   - iso3: KOR
+    persona_file: personas/KOR.md
     name: Republic of Korea
     lat: 35.91
     lon: 127.77
@@ -125,6 +130,7 @@ countries:
       - "Chinese coercion targeting ROK territorial waters"
 
   - iso3: PHL
+    persona_file: personas/PHL.md
     name: Republic of the Philippines
     lat: 12.88
     lon: 121.77
@@ -145,6 +151,7 @@ countries:
       - "Strike on EDCA sites hosting US forces"
 
   - iso3: AUS
+    persona_file: personas/AUS.md
     name: Australia
     lat: -25.27
     lon: 133.78
@@ -164,6 +171,7 @@ countries:
       - "Severe cyber attack on Australian critical infrastructure with CHN attribution"
 
   - iso3: PRK
+    persona_file: personas/PRK.md
     name: Democratic People's Republic of Korea
     lat: 40.34
     lon: 127.51
@@ -184,6 +192,7 @@ countries:
       - "Complete supply cutoff from CHN"
 
   - iso3: RUS
+    persona_file: personas/RUS.md
     name: Russian Federation
     lat: 61.52
     lon: 105.32
@@ -204,6 +213,7 @@ countries:
       - "Deployment of US INF-range missiles in Europe or NEA"
 
   - iso3: IND
+    persona_file: personas/IND.md
     name: Republic of India
     lat: 20.59
     lon: 78.96

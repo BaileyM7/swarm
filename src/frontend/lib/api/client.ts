@@ -124,6 +124,29 @@ export async function createScenario(
   });
 }
 
+/**
+ * Extract structured seed events from free-text scenario description.
+ *
+ * STUB TODAY: backend returns an empty array with ``is_stub: true``.
+ * Once the Haiku-backed extractor lands, this will return 1–3 real
+ * SeedEvents for the user to confirm / edit before launching the sim.
+ */
+export interface ExtractEventsResponse {
+  seed_events: import('@/lib/types/scenario').SeedEvent[];
+  posture_overrides: Record<string, string>;
+  is_stub: boolean;
+}
+
+export async function extractScenarioEvents(body: {
+  description: string;
+  country_ids?: string[];
+}): Promise<ExtractEventsResponse> {
+  return apiFetch<ExtractEventsResponse>('/api/scenarios/extract-events', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
 // ── Simulation endpoints ──────────────────────────────────────────────────
 
 export async function createSimulation(

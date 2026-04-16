@@ -15,12 +15,17 @@ import { EmptyState } from './ui/EmptyState';
 import { useSimStore } from '@/lib/store/simStore';
 import { useCountry } from '@/hooks/useCountries';
 import { getFlag } from '@/lib/geo';
-import type { SimEvent } from '@/lib/types/sim-event';
+import type { SimEvent, TriggeringFactor } from '@/lib/types/sim-event';
 
 export interface AgentDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   onEventClick: (event: SimEvent) => void;
+  /**
+   * Click on a triggering factor inside an expanded DecisionRow. Page-level
+   * handler resolves `kind=event` factors back to the source SimEvent.
+   */
+  onFactorClick?: (factor: TriggeringFactor, event: SimEvent) => void;
   drawerWidth: number;
 }
 
@@ -28,11 +33,20 @@ export function AgentDrawer({
   isOpen,
   onClose,
   onEventClick,
+  onFactorClick,
   drawerWidth,
 }: AgentDrawerProps) {
   const selectedCountry = useSimStore((s) => s.selectedCountry);
   const getVisibleEvents = useSimStore((s) => s.visibleEvents);
-  const [expandedDecision, setExpandedDecision] = useState<string | null>(null);
+  // ``collapsedDecisions`` inverts the old "only one expanded at a time"
+  // pattern: every decision is expanded by default so the full "X did Y
+  // because Z in hopes of W" ExplainabilityCard is visible inline —
+  // matching the Taiwan-demo visual.  Users collapse individual rows by
+  // clicking the chevron.  Using a Set of collapsed ids keeps the
+  // default-expanded behaviour stable as new events stream in.
+  const [collapsedDecisions, setCollapsedDecisions] = useState<Set<string>>(
+    () => new Set(),
+  );
 
   const { country, isLoading } = useCountry(selectedCountry);
 
@@ -132,10 +146,17 @@ export function AgentDrawer({
                   turn={ev.turn}
                   actionLabel={ev.action_type.replace(/_/g, ' ')}
                   reasoningTrace={ev.rationale || 'Reasoning trace not available.'}
-                  isExpanded={expandedDecision === ev.id}
+                  isExpanded={!collapsedDecisions.has(ev.id)}
                   onToggle={() =>
-                    setExpandedDecision((prev) => (prev === ev.id ? null : ev.id))
+                    setCollapsedDecisions((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(ev.id)) next.delete(ev.id);
+                      else next.add(ev.id);
+                      return next;
+                    })
                   }
+                  event={ev}
+                  onFactorClick={onFactorClick}
                 />
               ))}
             </div>

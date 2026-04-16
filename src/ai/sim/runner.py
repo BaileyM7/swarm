@@ -25,9 +25,12 @@ from app.db.session import AsyncSessionLocal
 
 from ai.agents.arbiter import Arbiter
 from ai.agents.country_agent import ChatAnthropicClient, CountryAgent
+from ai.agents.leader_profile import LeaderProfileError, parse_persona_file
 from ai.memory.embeddings import Embedder, HashEmbedder, VoyageEmbedder
 from ai.memory.store import AgentMemoryStore
+from ai.sim.extractors import default_extractors
 from ai.sim.loop import ScenarioSpec, SimLoop, seed_world_from_countries
+from ai.sim.signals import SignalCollector
 from ai.sim.world import WorldState
 
 log = structlog.get_logger(__name__)
@@ -147,12 +150,15 @@ class LangGraphSimRunner:
                     max_turns=sim_row.max_turns or settings.max_turns,
                 )
 
+                signal_collector = SignalCollector(default_extractors())
+
                 loop = SimLoop(
                     agents=agents,
                     arbiter=arbiter,
                     world=world,
                     memory_store=memory_store,
                     max_turns=scenario.max_turns,
+                    signal_collector=signal_collector,
                 )
                 self._loops[simulation_id] = loop
 
@@ -212,6 +218,7 @@ class LangGraphSimRunner:
                 doctrine=state.doctrine,
                 red_lines=[r.description for r in state.red_lines],
                 llm=llm_client,
+                persona=state.persona,
             )
         return agents
 
@@ -234,7 +241,48 @@ class LangGraphSimRunner:
         with _COUNTRIES_YAML.open("r", encoding="utf-8") as fp:
             data = yaml.safe_load(fp)
         countries = data.get("countries") if isinstance(data, dict) else data
-        return list(countries or [])
+        records = list(countries or [])
+        # Resolve persona_file references inline so downstream consumers (the
+        # WorldState builder, tests) see a plain "persona" string field on each
+        # record. Missing files degrade to an empty persona rather than failing
+        # the whole sim.
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+            ref = record.get("persona_file")
+            if not isinstance(ref, str) or not ref.strip():
+                continue
+            persona_path = (_SEEDS_DIR / ref).resolve()
+            try:
+                raw_text = persona_path.read_text(encoding="utf-8")
+            except OSError as exc:
+                log.warning(
+                    "persona_file_missing",
+                    iso3=record.get("iso3"),
+                    path=str(persona_path),
+                    error=str(exc),
+                )
+                continue
+
+            # Split YAML frontmatter (LeaderProfile + OCEAN) from the body.
+            # Malformed frontmatter is logged but does not abort the sim — the
+            # country falls back to a body-only persona with no structured
+            # OCEAN block, matching how missing personas already degrade.
+            try:
+                profile, body = parse_persona_file(raw_text)
+            except LeaderProfileError as exc:
+                log.warning(
+                    "persona_frontmatter_invalid",
+                    iso3=record.get("iso3"),
+                    path=str(persona_path),
+                    error=str(exc),
+                )
+                profile, body = None, raw_text
+
+            record["persona"] = body
+            if profile is not None:
+                record["leader_profile"] = profile
+        return records
 
 
 # ---------------------------------------------------------------------------

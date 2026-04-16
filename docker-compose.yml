@@ -77,12 +77,19 @@ services:
       AGENT_MAX_TOKENS: ${AGENT_MAX_TOKENS:-2048}
       ENVIRONMENT: development
       LOG_LEVEL: DEBUG
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
       # Bare imports in the codebase are `from app.*`, `from ingest.*` (resolve
       # under /app/src/backend) and `from ai.*`, `from shared.*` (resolve under
       # /app/src). Put both on PYTHONPATH.
       PYTHONPATH: /app/src:/app/src/backend
     ports:
       - "${BACKEND_PORT:-8000}:8000"
+    # Some external APIs (notably api.acleddata.com) don't resolve through
+    # the default Docker Desktop DNS on Windows; force a public resolver so
+    # ingest adapters can reach them.
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     volumes:
       - ./src/backend:/app/src/backend
       - ./src/ai:/app/src/ai

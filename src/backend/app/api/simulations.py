@@ -98,7 +98,11 @@ def _sim_to_response(sim: Simulation, ws_url: str | None = None) -> SimulationRe
 
 
 @router.post("", status_code=202, response_model=dict[str, Any])
-@limiter.limit("5/minute")
+# Demo-friendly: 5/min made Execute clicks during iteration cycles return
+# 429 before the runner even saw them.  The sim itself is the real capacity
+# bottleneck (Anthropic TPM + ``max_concurrent_sims`` config), not this
+# endpoint.  Bumped to 30/min so rapid preset-click cycles don't bounce.
+@limiter.limit("30/minute")
 async def create_simulation(
     request: Request,
     body: SimulationCreate,

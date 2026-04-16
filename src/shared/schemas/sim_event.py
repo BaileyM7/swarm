@@ -62,6 +62,96 @@ class Citation(BaseModel):
     )
 
 
+# ---------------------------------------------------------------------------
+# Explainability — structured "why did the agent do this?" triplet
+# ---------------------------------------------------------------------------
+
+
+class FactorKind(str, _enum.Enum):
+    """The class of evidence the agent is citing as a triggering factor.
+
+    Each kind dictates how ``ref`` is resolved by the frontend:
+      * ``event``      — ref is a SimEvent UUID drawn from this agent's perception
+      * ``red_line``   — ref is a red-line slug (or first 6 words of description)
+      * ``memory``     — ref is ``"turn:<N>"`` pointing at a recalled memory turn
+      * ``posture``    — ref is an ordered country-pair like ``"USA-TWN"``
+      * ``perception`` — ref is a dotted field path within the perception summary
+    """
+
+    event = "event"
+    red_line = "red_line"
+    memory = "memory"
+    posture = "posture"
+    perception = "perception"
+
+
+class TriggeringFactor(BaseModel):
+    """One concrete piece of evidence an agent cited when deciding to act.
+
+    The discriminated ``kind`` + ``ref`` shape lets the frontend resolve each
+    factor back to the exact source object — clickable causes, not narration.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    kind: FactorKind = Field(..., description="The class of evidence cited.")
+    ref: str = Field(
+        ...,
+        min_length=1,
+        max_length=200,
+        description=(
+            "Reference whose interpretation depends on `kind`: "
+            "event UUID, red-line slug, 'turn:N', ISO3 pair, or perception field path."
+        ),
+    )
+    note: str = Field(
+        ...,
+        min_length=1,
+        max_length=200,
+        description="One short clause naming what about this factor drove the choice.",
+    )
+    verified: bool = Field(
+        default=True,
+        description=(
+            "False if the SimLoop could not verify ``ref`` against the agent's "
+            "perception (e.g. a `kind=event` ref that did not appear in "
+            "recent_events). The factor is preserved but flagged for the UI."
+        ),
+    )
+
+
+class Explainability(BaseModel):
+    """Structured explanation of a single agent decision.
+
+    Reads as: the agent did *summary* because of *triggering_factors* in hopes
+    of *intended_outcome*.
+
+    Optional on the SimEvent so legacy events (pre-feature) and seed events
+    can render via the legacy rationale-only view.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    summary: str = Field(
+        ...,
+        min_length=1,
+        max_length=160,
+        description="One verb phrase naming the action. e.g. 'Imposed targeted sanctions on TSMC exports.'",
+    )
+    triggering_factors: list[TriggeringFactor] = Field(
+        ...,
+        min_length=1,
+        max_length=4,
+        description="1–4 evidentiary factors the agent reacted to.",
+    )
+    intended_outcome: str = Field(
+        ...,
+        min_length=1,
+        max_length=240,
+        description="One sentence stating the result the agent hopes to cause.",
+    )
+
+
 class SimEventCreate(BaseModel):
     """Input schema used by the sim engine when writing a new SimEvent.
 
@@ -119,6 +209,14 @@ class SimEventCreate(BaseModel):
         ge=0,
         le=5,
         description="Escalation ladder rung (0=peacetime, 5=general_war).",
+    )
+    explainability: Explainability | None = Field(
+        default=None,
+        description=(
+            "Structured 'X did Y because Z in hopes of W' triplet. None for "
+            "legacy events and scenario seeds; populated for every agent-driven "
+            "SimEvent emitted by the SimLoop."
+        ),
     )
 
     @field_validator("actor_country", "target_country", mode="before")
