@@ -1,0 +1,34 @@
+# Pre-commit hooks for swarm.
+#
+# Setup: install dev group, then install the git hook:
+#   uv sync
+#   uv run pre-commit install
+#
+# To bypass in a genuine emergency:
+#   git commit --no-verify
+#
+# Ruff config (rule selection, line length) lives in pyproject.toml under [tool.ruff].
+#
+# NOTE: mypy is intentionally NOT included in this hook yet. The repo has
+# `[tool.mypy] strict = true`, and the existing tree currently has ~133 type
+# errors across 35 files. Adding strict mypy here would block commits to all
+# of those files until they're fixed. Add as a follow-up after a baseline
+# typing pass, or scope mypy to a subset of `src/` once it's clean.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.7.4
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=1000]

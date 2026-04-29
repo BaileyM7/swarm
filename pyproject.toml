@@ -51,6 +51,7 @@ dev = [
   # Test infrastructure
   "fakeredis>=2.26.0",    # In-memory Redis for unit/integration tests
   "aiosqlite>=0.20.0",    # SQLite async driver for in-memory test DB
+  "pre-commit>=4.6.0",
 ]
 
 [build-system]
