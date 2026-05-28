@@ -19,30 +19,30 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
-from datetime import datetime, timedelta, timezone
-from typing import Sequence
+from collections.abc import Sequence
+from datetime import UTC, datetime, timedelta
 
 import structlog
-
 from app.db.session import AsyncSessionLocal
-from ingest.base import IngestionRunResult, Source
-from ingest.gdelt import GDELTSource
+
 from ingest.acled import ACLEDSource
-from ingest.worldbank import WorldBankSource
+from ingest.aisstream import AISStreamSource
+from ingest.base import IngestionRunResult, Source
+from ingest.eia import EIASource
 from ingest.fred import FREDSource
-from ingest.un_comtrade import UNComtradeSource
+from ingest.gdelt import GDELTSource
+from ingest.gleif import GLEIFSource
+from ingest.icij_offshore import ICIJOffshoreSource
 from ingest.imf import IMFSource
+from ingest.marinecadastre_ais import MarineCadastreAISSource
 from ingest.ofac_sdn import OFACSDNSource
 from ingest.open_sanctions import OpenSanctionsSource
 from ingest.opencorporates import OpenCorporatesSource
-from ingest.sec_edgar import SECEdgarSource
-from ingest.gleif import GLEIFSource
-from ingest.datalastic import DatalasticSource
-from ingest.trade_gov import TradeGovSource
-from ingest.marinecadastre_ais import MarineCadastreAISSource
-from ingest.icij_offshore import ICIJOffshoreSource
 from ingest.sayari import SayariSource
-from ingest.eia import EIASource
+from ingest.sec_edgar import SECEdgarSource
+from ingest.trade_gov import TradeGovSource
+from ingest.un_comtrade import UNComtradeSource
+from ingest.worldbank import WorldBankSource
 from ingest.yfinance import YFinanceSource
 
 log = structlog.get_logger(__name__)
@@ -62,7 +62,7 @@ _ALL_SOURCES: dict[str, Source] = {
         OpenCorporatesSource(),
         SECEdgarSource(),
         GLEIFSource(),
-        DatalasticSource(),
+        AISStreamSource(),
         TradeGovSource(),
         MarineCadastreAISSource(),
         ICIJOffshoreSource(),
@@ -79,7 +79,7 @@ def _parse_dt(value: str) -> datetime:
         try:
             dt = datetime.strptime(value, fmt)
             if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
+                dt = dt.replace(tzinfo=UTC)
             return dt
         except ValueError:
             continue
@@ -91,8 +91,8 @@ def _resolve_sources(names: str) -> list[Source]:
     if names.lower() == "all":
         return list(_ALL_SOURCES.values())
     result: list[Source] = []
-    for name in names.split(","):
-        name = name.strip()
+    for raw_name in names.split(","):
+        name = raw_name.strip()
         if name not in _ALL_SOURCES:
             log.warning("runner.unknown_source", name=name)
             continue
@@ -106,24 +106,23 @@ async def _run_source(
     until: datetime,
 ) -> IngestionRunResult:
     """Run a single source inside its own DB session."""
-    async with AsyncSessionLocal() as session:
-        async with session.begin():
-            try:
-                result = await source.run(session, since, until)
-            except Exception as exc:  # noqa: BLE001
-                log.error(
-                    "runner.source_error",
-                    source=source.name,
-                    error=str(exc),
-                )
-                return IngestionRunResult(
-                    source=source.name,
-                    since=since,
-                    until=until,
-                    errors=[str(exc)],
-                )
-            finally:
-                await source.close()
+    async with AsyncSessionLocal() as session, session.begin():
+        try:
+            result = await source.run(session, since, until)
+        except Exception as exc:
+            log.error(
+                "runner.source_error",
+                source=source.name,
+                error=str(exc),
+            )
+            return IngestionRunResult(
+                source=source.name,
+                since=since,
+                until=until,
+                errors=[str(exc)],
+            )
+        finally:
+            await source.close()
     return result
 
 
@@ -186,7 +185,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     since = _parse_dt(args.since) if args.since else now - timedelta(hours=24)
     until = _parse_dt(args.until) if args.until else now
 

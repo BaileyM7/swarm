@@ -19,11 +19,9 @@ slow-moving entity-resolution data, not turn-by-turn intelligence.
 
 from __future__ import annotations
 
-from ai.sim.signals import SignalExtractor
-
 from ai.sim.extractors.acled import ACLEDExtractor
+from ai.sim.extractors.aisstream import AISStreamExtractor
 from ai.sim.extractors.comtrade import ComtradeExtractor
-from ai.sim.extractors.datalastic import DatalasticExtractor
 from ai.sim.extractors.eia import EIAExtractor
 from ai.sim.extractors.fred import FREDExtractor
 from ai.sim.extractors.gdelt import GDELTExtractor
@@ -34,6 +32,7 @@ from ai.sim.extractors.sec_edgar import SECEdgarExtractor
 from ai.sim.extractors.trade_gov import TradeGovExtractor
 from ai.sim.extractors.worldbank import WorldBankExtractor
 from ai.sim.extractors.yfinance import YFinanceExtractor
+from ai.sim.signals import SignalExtractor
 
 
 def default_extractors() -> list[SignalExtractor]:
@@ -47,7 +46,7 @@ def default_extractors() -> list[SignalExtractor]:
         GDELTExtractor(),
         ACLEDExtractor(),
         ComtradeExtractor(),
-        DatalasticExtractor(),
+        AISStreamExtractor(),
         OpenSanctionsExtractor(),
         OFACSDNExtractor(),
         TradeGovExtractor(),
@@ -62,8 +61,8 @@ def default_extractors() -> list[SignalExtractor]:
 
 __all__ = [
     "ACLEDExtractor",
+    "AISStreamExtractor",
     "ComtradeExtractor",
-    "DatalasticExtractor",
     "EIAExtractor",
     "FREDExtractor",
     "GDELTExtractor",

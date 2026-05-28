@@ -1,27 +1,28 @@
-"""Datalastic AIS signal extractor (Phase B — implemented).
+"""AISStream.io signal extractor.
 
-Datalastic provides AIS ship-tracking data.  Per-turn signal: count of
-flagged-vessel pings inside a watch zone for the country (e.g. PLA-flagged
-vessels in TWN's ADIZ buffer).  The ingest adapter is expected to populate
-``payload.{flag_iso3, zone, ping_count_w_w_pct}`` so we can emit a
-"week-over-week change in flagged pings" headline.
+Reads ``payload.ping_count_w_w_pct`` rows produced by the AISStream ingest
+adapter and emits a per-country "week-over-week change in flagged AIS
+position pings" signal when the magnitude crosses the 25% threshold.
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
+from app.db.models import Event
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Event
-
 from ai.sim.signals import Signal
 
+# Minimum w/w% magnitude that surfaces a signal — below this we treat the
+# week-over-week movement as noise and stay silent.
+_NOISE_FLOOR_PCT = 25.0
 
-class DatalasticExtractor:
-    source = "Datalastic"
-    _SOURCE_KEY = "datalastic"
+
+class AISStreamExtractor:
+    source = "AISStream"
+    _SOURCE_KEY = "aisstream"
 
     async def extract(
         self,
@@ -30,7 +31,7 @@ class DatalasticExtractor:
         *,
         window_hours: int = 24,
     ) -> Signal | None:
-        since = datetime.now(timezone.utc) - timedelta(hours=window_hours)
+        since = datetime.now(UTC) - timedelta(hours=window_hours)
         stmt = (
             select(Event)
             .where(
@@ -47,25 +48,24 @@ class DatalasticExtractor:
         if not rows:
             return None
 
-        # Pick the largest |w/w pct change| ping observation in the window.
         best: tuple[float, Event] | None = None
         for row in rows:
             pct = (row.payload or {}).get("ping_count_w_w_pct")
-            if not isinstance(pct, (int, float)):
+            if not isinstance(pct, int | float):
                 continue
             if best is None or abs(pct) > abs(best[0]):
                 best = (float(pct), row)
         if best is None:
             return None
         pct, row = best
-        if abs(pct) < 25.0:
+        if abs(pct) < _NOISE_FLOOR_PCT:
             return None
 
         flag = (row.payload or {}).get("flag_iso3", "?")
         zone = (row.payload or {}).get("zone", "watch zone")
         magnitude = round(min(1.0, abs(pct) / 200.0), 2)
         direction = "negative" if pct > 0 else "positive"
-        headline = f"{flag}-flagged AIS pings in {zone}: {pct:+.0f}% w/w"
+        headline = f"{flag}-flagged AIS position pings in {zone}: {pct:+.0f}% w/w"
         return Signal(
             source=self.source,
             headline=headline[:120],

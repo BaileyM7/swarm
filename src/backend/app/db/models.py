@@ -13,17 +13,19 @@ from typing import Any
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
+    BigInteger,
     CheckConstraint,
     DateTime,
     Enum,
+    Float,
     ForeignKey,
     Index,
     Integer,
     Numeric,
+    String,
     Text,
     UniqueConstraint,
     func,
-    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -35,7 +37,7 @@ from app.db.base import Base
 # ---------------------------------------------------------------------------
 
 
-class RelationshipPosture(str, enum.Enum):
+class RelationshipPosture(enum.StrEnum):
     """Bilateral relationship posture between two country agents."""
 
     allied = "allied"
@@ -45,7 +47,7 @@ class RelationshipPosture(str, enum.Enum):
     hostile = "hostile"
 
 
-class DataSourceStatus(str, enum.Enum):
+class DataSourceStatus(enum.StrEnum):
     """Operational health of an ingestion source."""
 
     active = "active"
@@ -53,7 +55,7 @@ class DataSourceStatus(str, enum.Enum):
     disabled = "disabled"
 
 
-class EventDomain(str, enum.Enum):
+class EventDomain(enum.StrEnum):
     """Domain classification of a raw data-lake event or sim action."""
 
     info = "info"
@@ -64,7 +66,7 @@ class EventDomain(str, enum.Enum):
     kinetic_general = "kinetic_general"
 
 
-class ScenarioStatus(str, enum.Enum):
+class ScenarioStatus(enum.StrEnum):
     """Lifecycle state of a user-authored scenario."""
 
     draft = "draft"
@@ -72,7 +74,7 @@ class ScenarioStatus(str, enum.Enum):
     archived = "archived"
 
 
-class SimulationStatus(str, enum.Enum):
+class SimulationStatus(enum.StrEnum):
     """Runtime state of a simulation run."""
 
     pending = "pending"
@@ -83,7 +85,7 @@ class SimulationStatus(str, enum.Enum):
     error = "error"
 
 
-class MemoryType(str, enum.Enum):
+class MemoryType(enum.StrEnum):
     """Category of an agent memory fragment."""
 
     observation = "observation"
@@ -106,9 +108,7 @@ class Country(Base):
 
     __tablename__ = "countries"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     iso3: Mapped[str] = mapped_column(Text, nullable=False, unique=True, index=True)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     # Free-form JSON blobs — GIN-indexed for containment queries
@@ -160,9 +160,7 @@ class CountryRelationship(Base):
 
     __tablename__ = "relationships"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     country_a_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("countries.id", ondelete="CASCADE"),
@@ -186,9 +184,7 @@ class CountryRelationship(Base):
         nullable=False,
         default=0,
     )
-    alliance_memberships: Mapped[list[str]] = mapped_column(
-        JSONB, nullable=False, default=list
-    )
+    alliance_memberships: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -219,14 +215,10 @@ class DataSource(Base):
 
     __tablename__ = "data_sources"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     source_key: Mapped[str] = mapped_column(Text, nullable=False, unique=True, index=True)
     display_name: Mapped[str] = mapped_column(Text, nullable=False)
-    last_ingest_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    last_ingest_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[DataSourceStatus] = mapped_column(
         Enum(DataSourceStatus, name="data_source_status"),
         nullable=False,
@@ -254,9 +246,7 @@ class Event(Base):
 
     __tablename__ = "events"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     data_source_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("data_sources.id", ondelete="SET NULL"),
@@ -273,18 +263,14 @@ class Event(Base):
     domain: Mapped[EventDomain | None] = mapped_column(
         Enum(EventDomain, name="event_domain"), nullable=True, index=True
     )
-    severity: Mapped[float | None] = mapped_column(
-        Numeric(precision=5, scale=2), nullable=True
-    )
+    severity: Mapped[float | None] = mapped_column(Numeric(precision=5, scale=2), nullable=True)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     ingested_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    data_source: Mapped[DataSource | None] = relationship(
-        "DataSource", back_populates="events"
-    )
+    data_source: Mapped[DataSource | None] = relationship("DataSource", back_populates="events")
 
     __table_args__ = (
         # Primary index for time-windowed queries by source (used by ingest workers)
@@ -304,15 +290,11 @@ class Scenario(Base):
 
     __tablename__ = "scenarios"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     title: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
     country_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
-    initial_conditions: Mapped[dict[str, Any]] = mapped_column(
-        JSONB, nullable=False, default=dict
-    )
+    initial_conditions: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     status: Mapped[ScenarioStatus] = mapped_column(
         Enum(ScenarioStatus, name="scenario_status"),
         nullable=False,
@@ -344,9 +326,7 @@ class Simulation(Base):
 
     __tablename__ = "simulations"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     scenario_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("scenarios.id", ondelete="CASCADE"),
@@ -361,16 +341,10 @@ class Simulation(Base):
     )
     current_turn: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     max_turns: Mapped[int] = mapped_column(Integer, nullable=False, default=20)
-    world_state_snapshot: Mapped[dict[str, Any] | None] = mapped_column(
-        JSONB, nullable=True
-    )
+    world_state_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     config: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
-    started_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    completed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -393,9 +367,7 @@ class SimEvent(Base):
 
     __tablename__ = "sim_events"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     sim_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("simulations.id", ondelete="CASCADE"),
@@ -420,18 +392,14 @@ class SimEvent(Base):
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     rationale: Mapped[str] = mapped_column(Text, nullable=False, default="")
     # citations: list of {"source": str, "ref": str}
-    citations: Mapped[list[dict[str, str]]] = mapped_column(
-        JSONB, nullable=False, default=list
-    )
+    citations: Mapped[list[dict[str, str]]] = mapped_column(JSONB, nullable=False, default=list)
     # Integer rung 0..5; validated by EscalationRung Pydantic enum at write time
     escalation_rung: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     # Structured "X did Y because Z in hopes of W" triplet. Nullable so
     # legacy rows and seed events render via the rationale-only fallback view.
     # Shape (when present): {summary, intended_outcome, triggering_factors:[
     #   {kind, ref, note, verified}, ...]}
-    explainability: Mapped[dict[str, Any] | None] = mapped_column(
-        JSONB, nullable=True
-    )
+    explainability: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -467,9 +435,7 @@ class AgentMemory(Base):
 
     __tablename__ = "agent_memory"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     sim_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("simulations.id", ondelete="CASCADE"),
@@ -493,9 +459,7 @@ class AgentMemory(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    simulation: Mapped[Simulation] = relationship(
-        "Simulation", back_populates="agent_memories"
-    )
+    simulation: Mapped[Simulation] = relationship("Simulation", back_populates="agent_memories")
 
     __table_args__ = (
         Index("ix_agent_memory_sim_country", "sim_id", "country_iso3"),
@@ -511,21 +475,54 @@ class AgentMemory(Base):
     )
 
 
+class AISPosition(Base):
+    """Live AIS position points collected by the AISStream ingest adapter.
+
+    Each row is one raw position broadcast from one MMSI. The vessels tool
+    queries this table by (mmsi, timestamp) for vessel_history() tracks and
+    derives port stops from it via infer_port_stops(). A nightly prune keeps
+    the table bounded to roughly 30 days of recent data.
+    """
+
+    __tablename__ = "ais_positions"
+
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+    )
+    mmsi: Mapped[str] = mapped_column(String(16), nullable=False)
+    latitude: Mapped[float] = mapped_column(Float, nullable=False)
+    longitude: Mapped[float] = mapped_column(Float, nullable=False)
+    speed: Mapped[float | None] = mapped_column(Float, nullable=True)
+    course: Mapped[float | None] = mapped_column(Float, nullable=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ingested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_ais_positions_mmsi_timestamp", "mmsi", "timestamp"),
+        Index("ix_ais_positions_timestamp", "timestamp"),
+    )
+
+
 # Convenience re-export so `from app.db.models import *` works cleanly
 __all__ = [
+    "AISPosition",
+    "AgentMemory",
     "Base",
     "Country",
     "CountryRelationship",
     "DataSource",
-    "Event",
-    "Scenario",
-    "Simulation",
-    "SimEvent",
-    "AgentMemory",
-    "RelationshipPosture",
     "DataSourceStatus",
+    "Event",
     "EventDomain",
-    "ScenarioStatus",
-    "SimulationStatus",
     "MemoryType",
+    "RelationshipPosture",
+    "Scenario",
+    "ScenarioStatus",
+    "SimEvent",
+    "Simulation",
+    "SimulationStatus",
 ]
